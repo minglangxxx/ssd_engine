@@ -1,0 +1,7 @@
+CREATE DATABASE IF NOT EXISTS ssd_engine
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+CREATE USER IF NOT EXISTS 'ssd_engine'@'%' IDENTIFIED BY '123456';
+GRANT ALL PRIVILEGES ON ssd_engine.* TO 'ssd_engine'@'%';
+FLUSH PRIVILEGES;
