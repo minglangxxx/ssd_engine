@@ -10,18 +10,24 @@ from app.models.fio_trend import FioTrendData
 from app.models.task import Task, TaskStatus
 from app.utils.helpers import ApiError
 from app.workloads.fio_workload import FioConfigError, FioConfigValidator
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class TaskService:
     @staticmethod
     def create(data: dict) -> Task:
+        logger.info(f"Creating new task for device {data['device_ip']}")
         config = data.get('config', {})
         errors = FioConfigValidator.validate(config)
         if errors:
+            logger.error(f"Configuration validation failed: {errors}")
             raise FioConfigError(errors)
 
         device = Device.query.filter_by(ip=data['device_ip']).first()
         if device is None:
+            logger.info(f"Device {data['device_ip']} not found, creating new device")
             device = Device(
                 ip=data['device_ip'],
                 name=data.get('name') or data['device_ip'],
@@ -30,6 +36,7 @@ class TaskService:
             )
             db.session.add(device)
             db.session.flush()
+            logger.info(f"New device {data['device_ip']} created")
 
         task = Task(
             name=data.get('name') or f"FIO-{data['device_ip']}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
@@ -43,20 +50,25 @@ class TaskService:
         )
         db.session.add(task)
         db.session.flush()
+        logger.info(f"Starting task {task.id} on device {task.device_ip}")
         TaskService._start_task(task, device)
         db.session.commit()
+        logger.info(f"Task {task.id} creation completed successfully")
         return task
 
     @staticmethod
     def get(task_id: int) -> Task:
+        logger.info(f"Retrieving task {task_id}")
         task = Task.query.get(task_id)
         if not task:
+            logger.warning(f"Attempt to retrieve non-existent task {task_id}")
             raise ApiError('NOT_FOUND', '任务不存在', 404)
         TaskService.refresh_runtime_state(task)
         return task
 
     @staticmethod
     def list(status: str | None = None, keyword: str | None = None, page: int = 1, page_size: int = 10) -> dict:
+        logger.info(f"Listing tasks with filters - status: {status}, keyword: {keyword}, page: {page}/{page_size}")
         query = Task.query
         if status and status.lower() != 'all':
             query = query.filter_by(status=status)
@@ -70,6 +82,7 @@ class TaskService:
         )
         for item in pagination.items:
             TaskService.refresh_runtime_state(item)
+        logger.info(f"Returning {len(pagination.items)} tasks out of total {pagination.total}")
         return {
             'items': [item.to_dict() for item in pagination.items],
             'total': pagination.total,
@@ -77,13 +90,16 @@ class TaskService:
 
     @staticmethod
     def delete(task_id: int) -> None:
+        logger.info(f"Deleting task {task_id}")
         task = TaskService.get(task_id)
         FioTrendData.query.filter_by(task_id=task.id).delete()
         db.session.delete(task)
         db.session.commit()
+        logger.info(f"Task {task_id} deleted successfully")
 
     @staticmethod
     def get_status(task_id: int) -> dict:
+        logger.info(f"Getting status for task {task_id}")
         task = TaskService.get(task_id)
         result = task.result or {}
         return {
@@ -96,34 +112,41 @@ class TaskService:
 
     @staticmethod
     def stop(task_id: int) -> Task:
+        logger.info(f"Stopping task {task_id}")
         task = TaskService.get(task_id)
         if task.status not in {TaskStatus.PENDING, TaskStatus.RUNNING}:
+            logger.warning(f"Attempt to stop task {task_id} that is not running/pending. Current status: {task.status}")
             raise ApiError('VALIDATION_ERROR', '只有运行中或待启动任务可以停止', 400)
 
         device = TaskService._get_task_device(task)
         agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
         try:
             if not agent.test_connection():
+                logger.error(f"Failed to connect to agent on {device.ip}:{device.agent_port} when stopping task {task_id}")
                 raise ApiError('CONNECTION_ERROR', 'Agent 无响应，无法停止任务', 503)
 
-            response = agent.fio_stop(str(task.id))
+            response = agent.fio_stop(str(task_id))
             if not response.get('success', False):
+                logger.error(f"Agent failed to stop task {task_id}, response: {response}")
                 raise ApiError('CONNECTION_ERROR', 'Agent 停止任务失败', 503)
 
             task.status = TaskStatus.FAILED
             task.result = task.result or {}
             task.result['error'] = 'User cancelled'
             task.updated_at = datetime.utcnow()
-            TaskService._replace_trend_points(task.id, agent.fio_trend(str(task.id)))
+            TaskService._replace_trend_points(task.id, agent.fio_trend(str(task_id)))
             db.session.commit()
+            logger.info(f"Task {task_id} stopped successfully")
             return task
         finally:
             agent.close()
 
     @staticmethod
     def retry(task_id: int) -> Task:
+        logger.info(f"Retrying task {task_id}")
         task = TaskService.get(task_id)
         if task.status != TaskStatus.FAILED:
+            logger.warning(f"Attempt to retry task {task_id} that is not in FAILED state. Current status: {task.status}")
             raise ApiError('VALIDATION_ERROR', '只有失败任务可以重试', 400)
 
         device = TaskService._get_task_device(task)
@@ -133,10 +156,12 @@ class TaskService:
         task.updated_at = datetime.utcnow()
         TaskService._start_task(task, device)
         db.session.commit()
+        logger.info(f"Task {task_id} retry initiated successfully")
         return task
 
     @staticmethod
     def get_trend(task_id: int, start: str | None = None, end: str | None = None) -> list[dict]:
+        logger.info(f"Getting trend data for task {task_id}, time range: {start} to {end}")
         task = TaskService.get(task_id)
         device = Device.query.get(task.device_id) if task.device_id else None
 
@@ -144,9 +169,11 @@ class TaskService:
             agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
             try:
                 if agent.test_connection():
-                    return agent.fio_trend(str(task.id), start, end)
-            except Exception:
-                pass
+                    trend_data = agent.fio_trend(str(task_id), start, end)
+                    logger.info(f"Retrieved {len(trend_data)} trend points from agent for task {task_id}")
+                    return trend_data
+            except Exception as e:
+                logger.error(f"Error getting trend data from agent for task {task_id}: {str(e)}")
             finally:
                 agent.close()
 
@@ -155,10 +182,13 @@ class TaskService:
             query = query.filter(FioTrendData.timestamp >= datetime.fromisoformat(start))
         if end:
             query = query.filter(FioTrendData.timestamp <= datetime.fromisoformat(end))
-        return [item.to_dict() for item in query.order_by(FioTrendData.timestamp.asc()).all()]
+        trend_data = [item.to_dict() for item in query.order_by(FioTrendData.timestamp.asc()).all()]
+        logger.info(f"Retrieved {len(trend_data)} trend points from database for task {task_id}")
+        return trend_data
 
     @staticmethod
     def refresh_runtime_state(task: Task) -> Task:
+        logger.debug(f"Refreshing runtime state for task {task.id}, current status: {task.status}")
         if task.status not in {TaskStatus.PENDING, TaskStatus.RUNNING} or not task.device_id:
             return task
 
@@ -167,10 +197,12 @@ class TaskService:
         agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
         try:
             if not agent.test_connection():
+                logger.warning(f"Cannot connect to agent on {device.ip}:{device.agent_port} for task {task.id}")
                 return task
 
             status_payload = agent.fio_status(str(task.id))
             remote_status = str(status_payload.get('status', '')).lower()
+            logger.debug(f"Remote status for task {task.id}: {remote_status}")
 
             if remote_status in {'pending', 'running'}:
                 mapped_status = TaskStatus.RUNNING if remote_status == 'running' else TaskStatus.PENDING
@@ -178,6 +210,7 @@ class TaskService:
                     task.status = mapped_status
                     task.updated_at = datetime.utcnow()
                     db.session.commit()
+                    logger.info(f"Updated task {task.id} status to {mapped_status.value}")
                 return task
 
             if remote_status == 'success':
@@ -186,6 +219,7 @@ class TaskService:
                 task.updated_at = datetime.utcnow()
                 TaskService._replace_trend_points(task.id, agent.fio_trend(str(task.id)))
                 db.session.commit()
+                logger.info(f"Task {task.id} completed successfully")
                 return task
 
             if remote_status in {'failed', 'not_found'}:
@@ -196,23 +230,28 @@ class TaskService:
                 task.updated_at = datetime.utcnow()
                 TaskService._replace_trend_points(task.id, agent.fio_trend(str(task.id)))
                 db.session.commit()
+                logger.warning(f"Task {task.id} failed: {status_payload.get('error', 'Unknown error')}")
             return task
         finally:
             agent.close()
 
     @staticmethod
     def _start_task(task: Task, device: Device) -> None:
+        logger.info(f"Starting task {task.id} on device {device.ip}")
         agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
         try:
             if not agent.test_connection():
+                logger.error(f"Failed to connect to agent on {device.ip}:{device.agent_port} when starting task {task.id}")
                 raise ApiError('CONNECTION_ERROR', 'Agent 无响应，无法启动任务', 503)
 
             response = agent.fio_start(str(task.id), task.config, task.device_path)
             if not response.get('success', False):
+                logger.error(f"Agent failed to start task {task.id}, response: {response}")
                 raise ApiError('CONNECTION_ERROR', 'Agent 启动 FIO 任务失败', 503)
 
             task.status = TaskStatus.RUNNING
             task.updated_at = datetime.utcnow()
+            logger.info(f"Task {task.id} started successfully on device {device.ip}")
         finally:
             agent.close()
 
@@ -220,11 +259,13 @@ class TaskService:
     def _get_task_device(task: Task) -> Device:
         device = Device.query.get(task.device_id) if task.device_id else None
         if device is None:
+            logger.error(f"Task {task.id} is associated with non-existent device ID: {task.device_id}")
             raise ApiError('NOT_FOUND', '任务关联设备不存在', 404)
         return device
 
     @staticmethod
     def _replace_trend_points(task_id: int, points: list[dict[str, Any]]) -> None:
+        logger.info(f"Replacing trend points for task {task_id}, received {len(points)} data points")
         FioTrendData.query.filter_by(task_id=task_id).delete()
         for point in points:
             timestamp = TaskService._parse_timestamp(point.get('timestamp'))
@@ -243,6 +284,7 @@ class TaskService:
                 lat_p99=float(point.get('lat_p99', 0) or 0),
                 lat_max=float(point.get('lat_max', 0) or 0),
             ))
+        logger.info(f"Trend points for task {task_id} replaced successfully")
 
     @staticmethod
     def _parse_timestamp(value: Any) -> datetime | None:
@@ -257,5 +299,6 @@ class TaskService:
                 try:
                     return datetime.fromtimestamp(float(value))
                 except ValueError:
+                    logger.warning(f"Could not parse timestamp value: {value}")
                     return None
         return None

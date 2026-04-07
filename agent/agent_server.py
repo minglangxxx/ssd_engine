@@ -5,6 +5,7 @@ import threading
 import time
 from collections import deque
 from datetime import datetime
+import logging
 
 from flask import Flask, jsonify, request
 
@@ -16,6 +17,11 @@ from collectors.smart_collector import SmartCollector
 from collectors.system_collector import SystemCollector
 from config import Config
 from executor.fio_runner import FioRunner
+from logger import setup_agent_logger
+
+# 初始化日志
+setup_agent_logger('agent_server', logging.INFO)
+logger = logging.getLogger('agent_server')
 
 
 class MonitorRingBuffer:
@@ -83,99 +89,155 @@ buffer = MonitorRingBuffer()
 
 
 def collect_background() -> None:
+    logger.info("Starting background monitoring collection")
     while True:
-        snapshot = {
-            'timestamp': time.time(),
-            'cpu': cpu_collector.collect(),
-            'memory': memory_collector.collect(),
-            'network': network_collector.collect(),
-            'system': system_collector.collect(),
-            'disks': disk_collector.collect_all(),
-        }
-        buffer.append(snapshot)
-        time.sleep(1)
+        try:
+            snapshot = {
+                'timestamp': time.time(),
+                'cpu': cpu_collector.collect(),
+                'memory': memory_collector.collect(),
+                'network': network_collector.collect(),
+                'system': system_collector.collect(),
+                'disks': disk_collector.collect_all(),
+            }
+            buffer.append(snapshot)
+            time.sleep(1)
+        except Exception as e:
+            logger.error(f"Error in background monitoring collection: {str(e)}")
+            time.sleep(1)  # 避免错误导致循环过快
 
 
 threading.Thread(target=collect_background, daemon=True).start()
 
 
 def run_command(command: str, timeout: int = 300) -> dict:
+    logger.info(f"Executing command: {command[:100]}{'...' if len(command) > 100 else ''}")
     try:
         result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout, check=False)
+        logger.info(f"Command completed with return code: {result.returncode}")
         return {'stdout': result.stdout, 'stderr': result.stderr, 'return_code': result.returncode}
     except subprocess.TimeoutExpired:
+        logger.warning(f"Command execution timed out after {timeout} seconds: {command[:50]}...")
         return {'stdout': '', 'stderr': f'命令执行超时（{timeout}秒）', 'return_code': -1}
 
 
 @app.get('/health')
 def health():
+    logger.debug("Health check endpoint called")
     return jsonify({'status': 'healthy', 'version': Config.VERSION})
 
 
 @app.post('/execute')
 def execute():
+    logger.info("Execute command endpoint called")
     payload = request.get_json(force=True) or {}
-    return jsonify(run_command(payload.get('command', ''), payload.get('timeout', 300)))
+    command = payload.get('command', '')
+    timeout = payload.get('timeout', 300)
+    logger.info(f"Executing command via API: {command[:100]}{'...' if len(command) > 100 else ''}, timeout: {timeout}s")
+    return jsonify(run_command(command, timeout))
 
 
 @app.post('/fio/start')
 def fio_start():
+    logger.info("FIO start endpoint called")
     payload = request.get_json(force=True) or {}
-    fio_runner.start(payload['task_id'], payload.get('config', {}), payload['device'])
+    task_id = payload['task_id']
+    device = payload['device']
+    config = payload.get('config', {})
+    logger.info(f"Starting FIO task {task_id} on device {device} with config: {list(config.keys()) if config else 'default'}")
+    fio_runner.start(task_id, config, device)
+    logger.info(f"FIO task {task_id} started successfully")
     return jsonify({'success': True, 'task_id': payload['task_id']})
 
 
 @app.get('/fio/status/<task_id>')
 def fio_status(task_id: str):
-    return jsonify(fio_runner.get_status(task_id))
+    logger.debug(f"FIO status endpoint called for task: {task_id}")
+    status = fio_runner.get_status(task_id)
+    logger.debug(f"Status for task {task_id}: {status.get('status', 'unknown')}")
+    return jsonify(status)
 
 
 @app.get('/fio/trend/<task_id>')
 def fio_trend(task_id: str):
-    return jsonify({'data': fio_runner.get_trend_data(task_id, request.args.get('start'), request.args.get('end'))})
+    logger.debug(f"FIO trend endpoint called for task: {task_id}")
+    start = request.args.get('start')
+    end = request.args.get('end')
+    logger.debug(f"Requesting trend data for task {task_id}, time range: {start} to {end}")
+    trend_data = fio_runner.get_trend_data(task_id, start, end)
+    logger.debug(f"Returning {len(trend_data)} trend points for task {task_id}")
+    return jsonify({'data': trend_data})
 
 
 @app.post('/fio/stop/<task_id>')
 def fio_stop(task_id: str):
+    logger.info(f"FIO stop endpoint called for task: {task_id}")
+    logger.info(f"Stopping FIO task {task_id}")
     fio_runner.stop(task_id)
+    logger.info(f"FIO task {task_id} stopped successfully")
     return jsonify({'success': True})
 
 
 @app.get('/monitor/host')
 def monitor_host():
-    return jsonify({
+    logger.debug("Host monitoring endpoint called")
+    snapshot = {
         'timestamp': time.time(),
         'cpu': cpu_collector.collect(),
         'memory': memory_collector.collect(),
         'network': network_collector.collect(),
         'system': system_collector.collect(),
-    })
+    }
+    logger.debug("Host monitoring data collected")
+    return jsonify(snapshot)
 
 
 @app.get('/monitor/host/history')
 def monitor_host_history():
-    return jsonify({'data': buffer.query(request.args.get('start'), request.args.get('end'))})
+    logger.debug("Host history monitoring endpoint called")
+    start = request.args.get('start')
+    end = request.args.get('end')
+    logger.debug(f"Requesting host history, time range: {start} to {end}")
+    history_data = buffer.query(start, end)
+    logger.debug(f"Returning {len(history_data)} host history records")
+    return jsonify({'data': history_data})
 
 
 @app.get('/monitor/disks')
 def monitor_disks():
-    return jsonify({'disks': disk_collector.list_disks()})
+    logger.debug("Disk list monitoring endpoint called")
+    disks = disk_collector.list_disks()
+    logger.debug(f"Found {len(disks)} disks")
+    return jsonify({'disks': disks})
 
 
 @app.get('/monitor/disk/<disk_name>')
 def monitor_disk(disk_name: str):
-    return jsonify(disk_collector.collect(disk_name))
+    logger.debug(f"Disk monitoring endpoint called for disk: {disk_name}")
+    disk_data = disk_collector.collect(disk_name)
+    logger.debug(f"Collected data for disk: {disk_name}")
+    return jsonify(disk_data)
 
 
 @app.get('/monitor/disk/<disk_name>/history')
 def monitor_disk_history(disk_name: str):
-    return jsonify({'data': buffer.query_disk(disk_name, request.args.get('start'), request.args.get('end'))})
+    logger.debug(f"Disk history monitoring endpoint called for disk: {disk_name}")
+    start = request.args.get('start')
+    end = request.args.get('end')
+    logger.debug(f"Requesting history for disk {disk_name}, time range: {start} to {end}")
+    history_data = buffer.query_disk(disk_name, start, end)
+    logger.debug(f"Returning {len(history_data)} history records for disk {disk_name}")
+    return jsonify({'data': history_data})
 
 
 @app.get('/smart/<path:device>')
 def smart(device: str):
-    return jsonify(smart_collector.collect(device))
+    logger.info(f"SMART data endpoint called for device: {device}")
+    smart_data = smart_collector.collect(device)
+    logger.info(f"SMART data collected for device: {device}")
+    return jsonify(smart_data)
 
 
 if __name__ == '__main__':
+    logger.info(f"Starting agent server on {Config.HOST}:{Config.PORT}")
     app.run(host=Config.HOST, port=Config.PORT)
