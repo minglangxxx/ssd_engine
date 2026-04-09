@@ -1,67 +1,72 @@
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 
 
-def setup_agent_logger(name: str = __name__, level: int = logging.INFO):
-    """
-    设置agent的日志记录器
-    
-    Args:
-        name: logger名称，默认为当前模块名
-        level: 日志级别，默认为INFO
-    
-    Returns:
-        logging.Logger: 配置好的logger实例
-    """
-    logger = logging.getLogger(name)
-    
-    # 避免重复添加handler
-    if logger.handlers:
-        return logger
-    
-    logger.setLevel(level)
-    
-    # 创建控制台处理器
+BASE_LOGGER_NAME = 'ssd_agent'
+DEFAULT_LOG_LEVEL = logging.INFO
+DEFAULT_LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
+
+
+def _resolve_log_dir(log_dir: str | None = None) -> Path:
+    if log_dir:
+        return Path(log_dir)
+
+    env_log_dir = os.getenv('AGENT_LOG_DIR')
+    if env_log_dir:
+        return Path(env_log_dir)
+
+    return Path(__file__).resolve().parent / 'logs'
+
+
+def _normalize_logger_name(name: str | None) -> str:
+    if not name or name in {__name__, '__main__', BASE_LOGGER_NAME}:
+        return BASE_LOGGER_NAME
+    if name.startswith(f'{BASE_LOGGER_NAME}.'):
+        return name
+    return f'{BASE_LOGGER_NAME}.{name}'
+
+
+def _configure_base_logger(level: int = DEFAULT_LOG_LEVEL, log_dir: str | None = None) -> logging.Logger:
+    base_logger = logging.getLogger(BASE_LOGGER_NAME)
+    base_logger.setLevel(level)
+
+    if base_logger.handlers:
+        return base_logger
+
+    resolved_log_dir = _resolve_log_dir(log_dir)
+    resolved_log_dir.mkdir(parents=True, exist_ok=True)
+
+    today = datetime.now().strftime('%Y%m%d')
+    log_filename = resolved_log_dir / f'agent_{today}.log'
+    formatter = logging.Formatter(DEFAULT_LOG_FORMAT)
+
     console_handler = logging.StreamHandler()
     console_handler.setLevel(level)
-    
-    # 创建文件处理器
-    log_dir = os.path.join(os.getcwd(), 'logs')
-    os.makedirs(log_dir, exist_ok=True)
-    
-    # 使用日期作为日志文件名
-    today = datetime.now().strftime('%Y%m%d')
-    log_filename = os.path.join(log_dir, f'agent_{today}.log')
-    
+    console_handler.setFormatter(formatter)
+
     file_handler = logging.FileHandler(log_filename, encoding='utf-8')
     file_handler.setLevel(level)
-    
-    # 设置日志格式
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
-    )
-    console_handler.setFormatter(formatter)
     file_handler.setFormatter(formatter)
-    
-    # 添加处理器到logger
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
-    
+
+    base_logger.addHandler(console_handler)
+    base_logger.addHandler(file_handler)
+    base_logger.propagate = False
+    return base_logger
+
+
+def setup_agent_logger(name: str = BASE_LOGGER_NAME, level: int = DEFAULT_LOG_LEVEL, log_dir: str | None = None) -> logging.Logger:
+    """设置 agent 公共日志器，并返回指定名称的子 logger。"""
+    _configure_base_logger(level=level, log_dir=log_dir)
+    logger = logging.getLogger(_normalize_logger_name(name))
+    logger.setLevel(level)
     return logger
 
 
-def get_logger(name: str = __name__):
-    """
-    获取logger实例，如果不存在则创建
-    
-    Args:
-        name: logger名称
-        
-    Returns:
-        logging.Logger: logger实例
-    """
-    return logging.getLogger(name)
+def get_logger(name: str = __name__) -> logging.Logger:
+    """获取已完成基础配置的 logger。"""
+    return setup_agent_logger(name)
 
 
 # 便捷的日志方法

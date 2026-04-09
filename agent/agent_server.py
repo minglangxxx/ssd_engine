@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 from __future__ import annotations
 
 import subprocess
@@ -5,7 +7,6 @@ import threading
 import time
 from collections import deque
 from datetime import datetime
-import logging
 
 from flask import Flask, jsonify, request
 
@@ -17,11 +18,11 @@ from collectors.smart_collector import SmartCollector
 from collectors.system_collector import SystemCollector
 from config import Config
 from executor.fio_runner import FioRunner
-from logger import setup_agent_logger
+from logger import get_logger, setup_agent_logger
 
 # 初始化日志
-setup_agent_logger('agent_server', logging.INFO)
-logger = logging.getLogger('agent_server')
+setup_agent_logger()
+logger = get_logger(__name__)
 
 
 class MonitorRingBuffer:

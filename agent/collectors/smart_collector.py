@@ -1,5 +1,9 @@
 import subprocess
 
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 
 class SmartCollector:
     def collect(self, device: str) -> dict:
@@ -12,6 +16,7 @@ class SmartCollector:
                 check=False,
             )
             if result.returncode != 0:
+                logger.warning('nvme smart-log failed for %s: %s', device, result.stderr.strip())
                 return {}
             import json
 
@@ -27,4 +32,5 @@ class SmartCollector:
                 'data_units_written': data.get('data_units_written', 0),
             }
         except Exception:
+            logger.exception('Failed to collect SMART metrics for %s', device)
             return {}
