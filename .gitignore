@@ -102,6 +102,7 @@ out/
 .nuxt/
 public/
 src-tauri/target/
+*.tsbuildinfo
 
 # Environment variables
 .env
