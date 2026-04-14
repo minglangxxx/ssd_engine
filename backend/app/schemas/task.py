@@ -37,8 +37,7 @@ class FioConfigSchema(BaseModel):
 class TaskCreateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     device_ip: str = Field(..., min_length=1, max_length=50)
-    device_user: str = Field(..., min_length=1, max_length=64)
-    device_password: str = Field(..., min_length=1, max_length=255)
     device_path: str = Field(..., min_length=1, max_length=255)
     config: dict[str, Any] = Field(default_factory=dict)
+    fio_command: str | None = Field(default=None, min_length=1)
     fault_type: Literal['none', 'power_off', 'drop_device'] = 'none'

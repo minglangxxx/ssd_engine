@@ -55,7 +55,6 @@ const TaskDetail: React.FC = () => {
       <Card title="设备 & FIO 配置" size="small" style={{ marginBottom: 16 }}>
         <Descriptions column={4} size="small">
           <Descriptions.Item label="设备IP">{task.device_ip}</Descriptions.Item>
-          <Descriptions.Item label="SSH用户">{task.device_user}</Descriptions.Item>
           <Descriptions.Item label="设备路径">{task.device_path}</Descriptions.Item>
           <Descriptions.Item label="读写模式">{task.config.rw}</Descriptions.Item>
           <Descriptions.Item label="块大小">{task.config.bs || '4k'}</Descriptions.Item>

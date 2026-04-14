@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Modal,
   Form,
@@ -14,9 +14,16 @@ import {
   Button,
   Space,
   message,
+  Alert,
+  Typography,
+  Divider,
+  Tag,
+  Radio,
 } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { useCreateTask } from '@/hooks/useTask';
-import { buildFioConfig } from '@/types/task';
+import { buildFioConfig, type FioConfig } from '@/types/task';
+import { deviceApi } from '@/api/device';
 import {
   RW_OPTIONS,
   IOENGINE_OPTIONS,
@@ -24,7 +31,31 @@ import {
   MEM_OPTIONS,
   RANDOM_DIST_OPTIONS,
   FAULT_TYPE_OPTIONS,
+  TASK_TEMPLATE_OPTIONS,
+  TASK_TEMPLATE_PRESETS,
 } from '@/utils/constants';
+import type { Device } from '@/types/device';
+
+type TaskTemplateKey = keyof typeof TASK_TEMPLATE_PRESETS | 'custom';
+
+const DEFAULT_TEMPLATE: TaskTemplateKey = 'randread-latency';
+
+const DEFAULT_CONFIG: Partial<FioConfig> = {
+  ...TASK_TEMPLATE_PRESETS[DEFAULT_TEMPLATE],
+  size: '1G',
+};
+
+const RAW_COMMAND_PLACEHOLDER = 'fio --rw=randread --bs=4k --iodepth=32 --numjobs=4 --runtime=60 --time_based=1 --direct=1';
+
+const templateHintMap: Record<TaskTemplateKey, string> = {
+  'randread-latency': '适合看 4k 低队列深度场景的读延迟表现。',
+  'randwrite-pressure': '适合观察高并发随机写压力下的稳定性和尾延迟。',
+  'seqread-throughput': '适合测顺序读取带宽上限。',
+  'seqwrite-throughput': '适合测顺序写入吞吐能力。',
+  'mixed-7030': '适合数据库类读多写少混合负载。',
+  'steady-state': '适合观察较长时间写压后的稳态表现。',
+  custom: '完全手工指定 fio 参数，适合熟悉 fio 的用户。',
+};
 
 interface TaskCreateModalProps {
   visible: boolean;
@@ -36,6 +67,84 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
   const [form] = Form.useForm();
   const { mutateAsync: createTask, isPending } = useCreateTask();
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
+  const selectedDeviceIp = Form.useWatch('device_ip', form);
+  const inputMode = (Form.useWatch('input_mode', form) as 'guided' | 'native' | undefined) || 'guided';
+  const selectedTemplate = (Form.useWatch('template', form) as TaskTemplateKey | undefined) || DEFAULT_TEMPLATE;
+  const selectedConfig = (Form.useWatch(['config'], form) as Partial<FioConfig> | undefined) || DEFAULT_CONFIG;
+  const selectedRw = Form.useWatch(['config', 'rw'], form) as FioConfig['rw'] | undefined;
+
+  const { data: devices, isLoading: devicesLoading } = useQuery({
+    queryKey: ['devices'],
+    queryFn: () => deviceApi.list(),
+    enabled: visible,
+  });
+
+  const selectedDevice = devices?.find((device) => device.ip === selectedDeviceIp);
+  const { data: selectedDeviceInfo, isFetching: disksLoading } = useQuery({
+    queryKey: ['device-info', selectedDevice?.id],
+    queryFn: () => deviceApi.getInfo(selectedDevice!.id),
+    enabled: visible && !!selectedDevice?.id,
+  });
+
+  useEffect(() => {
+    if (!visible || !devices?.length) {
+      return;
+    }
+
+    const hasSelectedDevice = devices.some((device) => device.ip === selectedDeviceIp);
+    if (!selectedDeviceIp || !hasSelectedDevice) {
+      form.setFieldValue('device_ip', devices[0].ip);
+    }
+  }, [devices, form, selectedDeviceIp, visible]);
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    const currentPath = form.getFieldValue('device_path');
+    if (!currentPath) {
+      return;
+    }
+
+    if (!selectedDeviceInfo?.disks?.length || !selectedDeviceInfo.disks.includes(currentPath)) {
+      form.setFieldValue('device_path', undefined);
+    }
+  }, [form, selectedDeviceInfo, visible]);
+
+  useEffect(() => {
+    if (!visible || inputMode !== 'guided' || selectedTemplate === 'custom') {
+      return;
+    }
+
+    const preset = TASK_TEMPLATE_PRESETS[selectedTemplate];
+    form.setFieldsValue({
+      config: {
+        ...DEFAULT_CONFIG,
+        ...form.getFieldValue('config'),
+        ...preset,
+      },
+    });
+  }, [form, selectedTemplate, visible]);
+
+  const hostOptions = (devices || []).map((device: Device) => ({
+    value: device.ip,
+    label: `${device.name} (${device.ip})`,
+  }));
+
+  const diskOptions = (selectedDeviceInfo?.disks || []).map((disk) => ({
+    value: disk,
+    label: disk,
+  }));
+
+  const configSummary = [
+    `模式 ${selectedConfig.rw || DEFAULT_CONFIG.rw}`,
+    `块大小 ${selectedConfig.bs || DEFAULT_CONFIG.bs}`,
+    `并发 ${selectedConfig.numjobs ?? DEFAULT_CONFIG.numjobs}`,
+    `队列 ${selectedConfig.iodepth ?? DEFAULT_CONFIG.iodepth}`,
+    `${selectedConfig.time_based === false ? '按数据量' : '按时间'} ${selectedConfig.runtime ?? DEFAULT_CONFIG.runtime}s`,
+    `direct ${selectedConfig.direct === false ? 'off' : 'on'}`,
+  ].join(' / ');
 
   const handleSubmit = async () => {
     try {
@@ -44,10 +153,9 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
       await createTask({
         name: values.name,
         device_ip: values.device_ip,
-        device_user: values.device_user,
-        device_password: values.device_password,
         device_path: values.device_path,
-        config: fioConfig,
+        config: values.input_mode === 'native' ? {} : fioConfig,
+        fio_command: values.input_mode === 'native' ? values.fio_command : undefined,
         fault_type: values.fault_type || 'none',
       });
       message.success('任务创建成功');
@@ -73,43 +181,104 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
       width={720}
       destroyOnClose
     >
-      <Form form={form} layout="vertical" onFinish={handleSubmit}>
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={handleSubmit}
+        initialValues={{
+          input_mode: 'guided',
+          template: DEFAULT_TEMPLATE,
+          fault_type: 'none',
+          config: DEFAULT_CONFIG,
+        }}
+      >
         {/* 任务名称 */}
         <Form.Item name="name" label="任务名称">
           <Input placeholder="可选，不填则自动生成" allowClear />
         </Form.Item>
 
-        {/* 设备配置 */}
-        <Card title="设备配置" size="small" style={{ marginBottom: 16 }}>
+        <Card title="设备与测试目标" size="small" style={{ marginBottom: 16 }}>
           <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="device_ip" label="设备IP" rules={[{ required: true, message: '请输入设备IP' }]}>
-                <Input placeholder="如: 10.0.0.1" />
+            <Col span={24}>
+              <Form.Item name="input_mode" label="配置方式">
+                <Radio.Group optionType="button" buttonStyle="solid">
+                  <Radio.Button value="guided">引导配置</Radio.Button>
+                  <Radio.Button value="native">原生命令</Radio.Button>
+                </Radio.Group>
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="device_user" label="SSH用户名" rules={[{ required: true, message: '请输入用户名' }]}>
-                <Input placeholder="如: root" />
+              <Form.Item name="device_ip" label="设备节点" rules={[{ required: true, message: '请选择设备节点' }]}>
+                <Select
+                  options={hostOptions}
+                  placeholder="选择已接入的设备节点"
+                  loading={devicesLoading}
+                  showSearch
+                  optionFilterProp="label"
+                />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="device_password" label="SSH密码" rules={[{ required: true, message: '请输入密码' }]}>
-                <Input.Password placeholder="密码" />
+              <Form.Item name="fault_type" label="故障注入" initialValue="none">
+                <Select options={FAULT_TYPE_OPTIONS} />
+              </Form.Item>
+            </Col>
+            {inputMode === 'guided' && (
+              <Col span={12}>
+                <Form.Item name="template" label="测试模板">
+                  <Select options={TASK_TEMPLATE_OPTIONS} />
+                </Form.Item>
+              </Col>
+            )}
+            <Col span={12}>
+              <Form.Item name="device_path" label="设备路径" rules={[{ required: true, message: '请选择设备路径' }]}>
+                {diskOptions.length > 0 ? (
+                  <Select
+                    options={diskOptions}
+                    placeholder="选择磁盘设备"
+                    loading={disksLoading}
+                    showSearch
+                    optionFilterProp="label"
+                  />
+                ) : (
+                  <Input placeholder="Agent 未返回磁盘列表时可手动输入，如 /dev/nvme0n1" />
+                )}
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="device_path" label="设备路径" rules={[{ required: true, message: '请输入设备路径' }]}>
-                <Input placeholder="如: /dev/nvme0n1" />
-              </Form.Item>
+              <Typography.Text type="secondary">
+                {inputMode === 'native' ? '可直接输入 fio 原生命令；平台会统一接管 filename、name、output-format 等托管参数。' : templateHintMap[selectedTemplate]}
+              </Typography.Text>
+              <div style={{ marginTop: 8 }}>
+                {selectedDevice && <Tag color={selectedDevice.agent_status === 'online' ? 'green' : 'red'}>{selectedDevice.agent_status === 'online' ? 'Agent在线' : 'Agent离线'}</Tag>}
+                {selectedDeviceInfo?.disks?.length ? <Tag color="blue">磁盘 {selectedDeviceInfo.disks.length} 块</Tag> : null}
+              </div>
             </Col>
           </Row>
         </Card>
 
-        {/* FIO基础配置 */}
-        <Card title="FIO基础配置" size="small" style={{ marginBottom: 16 }}>
+        {inputMode === 'native' ? (
+          <Card title="原生 fio 命令" size="small" style={{ marginBottom: 16 }}>
+            <Form.Item
+              name="fio_command"
+              label="fio 标准命令"
+              rules={[{ required: true, message: '请输入 fio 标准命令' }]}
+              extra="支持 fio --rw=randread --bs=4k 这类标准 CLI 形式；device_path 仍由上方设备路径统一指定。"
+            >
+              <Input.TextArea rows={6} placeholder={RAW_COMMAND_PLACEHOLDER} />
+            </Form.Item>
+            <Alert
+              type="info"
+              showIcon
+              message="命令要求"
+              description="支持 --key=value 和 --key value 两种写法。filename、name、output-format、group_reporting、status-interval 由平台统一接管。"
+            />
+          </Card>
+        ) : (
+        <Card title="核心配置" size="small" style={{ marginBottom: 16 }}>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name={['config', 'rw']} label="读写模式" rules={[{ required: true }]} initialValue="randread">
+              <Form.Item name={['config', 'rw']} label="读写模式" rules={[{ required: true }]}>
                 <Select options={RW_OPTIONS} />
               </Form.Item>
             </Col>
@@ -125,27 +294,48 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
             </Col>
             <Col span={12}>
               <Form.Item name={['config', 'numjobs']} label="并发任务数">
-                <InputNumber min={1} max={64} allowClear style={{ width: '100%' }} />
+                <InputNumber min={1} max={64} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item name={['config', 'iodepth']} label="IO深度">
-                <InputNumber min={1} max={256} allowClear style={{ width: '100%' }} />
+                <InputNumber min={1} max={256} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item name={['config', 'runtime']} label="运行时间(秒)">
-                <InputNumber min={1} allowClear style={{ width: '100%' }} />
+                <InputNumber min={1} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
+            {selectedRw === 'randrw' && (
+              <>
+                <Col span={12}>
+                  <Form.Item name={['config', 'rwmixread']} label="读比例(%)">
+                    <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name={['config', 'rwmixwrite']} label="写比例(%)">
+                    <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </>
+            )}
           </Row>
           <Form.Item name={['config', 'time_based']} valuePropName="checked" initialValue={true}>
             <Checkbox>基于时间完成</Checkbox>
           </Form.Item>
+          <Alert
+            type="info"
+            showIcon
+            message="当前测试摘要"
+            description={configSummary}
+          />
         </Card>
+        )}
 
         {/* 高级配置 */}
-        <Collapse
+        {inputMode === 'guided' && <Collapse
           activeKey={advancedExpanded ? ['1'] : []}
           onChange={() => setAdvancedExpanded(!advancedExpanded)}
           style={{ marginBottom: 16 }}
@@ -180,7 +370,7 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
                       children: (
                         <>
                           <Form.Item name={['config', 'fsync']} label="fsync间隔">
-                            <InputNumber min={0} allowClear />
+                            <InputNumber min={0} />
                           </Form.Item>
                           <Form.Item name={['config', 'buffer_pattern']} label="缓冲填充">
                             <Input placeholder="如: 0x00, 0xff" allowClear />
@@ -194,10 +384,10 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
                       children: (
                         <>
                           <Form.Item name={['config', 'thinktime']} label="思考时间(ms)">
-                            <InputNumber min={0} allowClear />
+                            <InputNumber min={0} />
                           </Form.Item>
                           <Form.Item name={['config', 'latency_target']} label="延迟目标(μs)">
-                            <InputNumber min={0} allowClear />
+                            <InputNumber min={0} />
                           </Form.Item>
                         </>
                       ),
@@ -208,10 +398,10 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
                       children: (
                         <>
                           <Form.Item name={['config', 'rate']} label="带宽限制(KB/s)">
-                            <InputNumber min={0} allowClear />
+                            <InputNumber min={0} />
                           </Form.Item>
                           <Form.Item name={['config', 'rate_iops']} label="IOPS限制">
-                            <InputNumber min={0} allowClear />
+                            <InputNumber min={0} />
                           </Form.Item>
                         </>
                       ),
@@ -253,7 +443,7 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
                             <Select options={RANDOM_DIST_OPTIONS} allowClear placeholder="默认" />
                           </Form.Item>
                           <Form.Item name={['config', 'randseed']} label="随机种子">
-                            <InputNumber allowClear />
+                            <InputNumber />
                           </Form.Item>
                         </>
                       ),
@@ -261,13 +451,14 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
                     {
                       key: 'mix',
                       label: '混合读写',
+                      disabled: selectedRw !== 'randrw',
                       children: (
                         <>
                           <Form.Item name={['config', 'rwmixread']} label="读比例(%)">
-                            <InputNumber min={0} max={100} allowClear />
+                            <InputNumber min={0} max={100} />
                           </Form.Item>
                           <Form.Item name={['config', 'rwmixwrite']} label="写比例(%)">
-                            <InputNumber min={0} max={100} allowClear />
+                            <InputNumber min={0} max={100} />
                           </Form.Item>
                         </>
                       ),
@@ -278,13 +469,13 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
                       children: (
                         <>
                           <Form.Item name={['config', 'stats_interval']} label="统计间隔(ms)">
-                            <InputNumber min={0} allowClear />
+                            <InputNumber min={0} />
                           </Form.Item>
                           <Form.Item name={['config', 'loops']} label="循环次数">
-                            <InputNumber min={1} allowClear />
+                            <InputNumber min={1} />
                           </Form.Item>
                           <Form.Item name={['config', 'startdelay']} label="启动延迟(秒)">
-                            <InputNumber min={0} allowClear />
+                            <InputNumber min={0} />
                           </Form.Item>
                         </>
                       ),
@@ -294,14 +485,9 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
               ),
             },
           ]}
-        />
+        />}
 
-        {/* 故障配置 */}
-        <Card title="故障配置（可选）" size="small" style={{ marginBottom: 16 }}>
-          <Form.Item name="fault_type" initialValue="none">
-            <Select options={FAULT_TYPE_OPTIONS} />
-          </Form.Item>
-        </Card>
+        <Divider style={{ margin: '16px 0' }} />
 
         <div style={{ textAlign: 'right' }}>
           <Space>

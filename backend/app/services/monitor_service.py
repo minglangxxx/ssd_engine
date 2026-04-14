@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from app.executors.agent_executor import AgentExecutor
+from app.models.device import Device
+from app.services.device_service import DeviceService
 
 
 class MonitorService:
     @staticmethod
     def get_agent(host: str) -> AgentExecutor:
-        return AgentExecutor(f'http://{host}:8080')
+        device = Device.query.filter_by(ip=host).first()
+        if device is not None:
+            return DeviceService.get_agent(device)
+        return DeviceService.get_agent(host)
 
     @staticmethod
     def _flatten_host_point(point: dict) -> dict:

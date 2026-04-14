@@ -1,5 +1,6 @@
 from enum import Enum
 import re
+import shlex
 from typing import Any
 
 
@@ -92,3 +93,95 @@ class FioConfigValidator:
             elif spec.get('default') is not None:
                 result[key] = spec['default']
         return result
+
+    @staticmethod
+    def parse_cli_command(command: str, device_path: str | None = None) -> dict[str, Any]:
+        if not command or not command.strip():
+            raise FioConfigError([{'field': 'fio_command', 'message': '原生 fio 命令不能为空'}])
+
+        try:
+            tokens = shlex.split(command.strip())
+        except ValueError as error:
+            raise FioConfigError([{'field': 'fio_command', 'message': f'命令解析失败: {error}'}]) from error
+
+        if not tokens:
+            raise FioConfigError([{'field': 'fio_command', 'message': '原生 fio 命令不能为空'}])
+
+        if tokens[0] == 'fio':
+            tokens = tokens[1:]
+
+        managed_keys = {'name', 'filename', 'output-format', 'group_reporting', 'status-interval'}
+        config: dict[str, Any] = {}
+        errors: list[dict[str, str]] = []
+        index = 0
+
+        while index < len(tokens):
+            token = tokens[index]
+            if not token.startswith('--'):
+                errors.append({'field': 'fio_command', 'message': f'仅支持 --key=value 或 --key value 形式，无法识别: {token}'})
+                index += 1
+                continue
+
+            raw_key_value = token[2:]
+            if '=' in raw_key_value:
+                raw_key, raw_value = raw_key_value.split('=', 1)
+                index += 1
+            else:
+                raw_key = raw_key_value
+                next_token = tokens[index + 1] if index + 1 < len(tokens) else None
+                spec = FIO_PARAMETERS.get(raw_key)
+                if spec and spec['type'] == FioParameterType.BOOLEAN and (next_token is None or next_token.startswith('--')):
+                    raw_value = None
+                    index += 1
+                else:
+                    if next_token is None:
+                        errors.append({'field': raw_key, 'message': '参数缺少值'})
+                        index += 1
+                        continue
+                    raw_value = next_token
+                    index += 2
+
+            if raw_key in managed_keys:
+                if raw_key == 'filename' and device_path and raw_value and raw_value != device_path:
+                    errors.append({'field': raw_key, 'message': f'filename 与所选设备路径不一致: {raw_value}'})
+                continue
+
+            if raw_key not in FIO_PARAMETERS:
+                errors.append({'field': raw_key, 'message': f'当前平台暂不支持该 fio 参数: {raw_key}'})
+                continue
+
+            try:
+                config[raw_key] = FioConfigValidator._coerce_cli_value(raw_key, raw_value)
+            except ValueError as error:
+                errors.append({'field': raw_key, 'message': str(error)})
+
+        if errors:
+            raise FioConfigError(errors)
+
+        return config
+
+    @staticmethod
+    def _coerce_cli_value(key: str, raw_value: str | None) -> Any:
+        spec = FIO_PARAMETERS[key]
+        spec_type = spec['type']
+
+        if spec_type == FioParameterType.BOOLEAN:
+            if raw_value is None:
+                return True
+            normalized = str(raw_value).strip().lower()
+            if normalized in {'1', 'true', 'yes', 'on'}:
+                return True
+            if normalized in {'0', 'false', 'no', 'off'}:
+                return False
+            raise ValueError('布尔参数只支持 1/0/true/false')
+
+        if raw_value is None:
+            raise ValueError('参数缺少值')
+
+        if spec_type == FioParameterType.INTEGER:
+            try:
+                return int(raw_value)
+            except ValueError as error:
+                raise ValueError('整数参数格式错误') from error
+
+        return raw_value

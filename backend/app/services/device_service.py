@@ -11,9 +11,16 @@ logger = get_logger(__name__)
 
 class DeviceService:
     @staticmethod
-    def list_all() -> list[Device]:
+    def list_all(refresh_agent_status: bool = False) -> list[Device]:
         logger.info("Listing all devices")
         devices = Device.query.order_by(Device.created_at.desc()).all()
+        if refresh_agent_status:
+            for device in devices:
+                try:
+                    DeviceService.get_agent_status(device.id)
+                except Exception as error:
+                    logger.warning('Failed to refresh agent status for device %s: %s', device.ip, error)
+            devices = Device.query.order_by(Device.created_at.desc()).all()
         logger.info(f"Total {len(devices)} devices retrieved")
         return devices
 

@@ -63,8 +63,8 @@ class MonitorRingBuffer:
                 return 0
 
     def query(self, start: str | None = None, end: str | None = None) -> list[dict]:
-        start_ts = self._parse_timestamp(start)
-        end_ts = self._parse_timestamp(end)
+        start_ts = self._parse_timestamp(start) if start is not None else float('-inf')
+        end_ts = self._parse_timestamp(end) if end is not None else float('inf')
         with self.lock:
             return [item for item in self.buffer if start_ts <= item.get('timestamp', 0) <= end_ts]
 
@@ -73,7 +73,9 @@ class MonitorRingBuffer:
         for item in self.query(start, end):
             disk = item.get('disks', {}).get(disk_name)
             if disk:
-                points.append(disk)
+                point = dict(disk)
+                point.setdefault('timestamp', item.get('timestamp'))
+                points.append(point)
         return points
 
 

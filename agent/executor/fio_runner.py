@@ -360,13 +360,32 @@ class FioRunner:
 
     def get_trend_data(self, task_id: str, start: str | None = None, end: str | None = None) -> list[dict[str, Any]]:
         logger.debug('Getting trend data for FIO task %s, time range: %s to %s', task_id, start, end)
-        del start
-        del end
         task = self.tasks.get(task_id)
         if task is None:
             logger.warning('Attempt to get trend data for non-existent FIO task: %s', task_id)
             return []
-        return list(task.trend_data)
+
+        start_ts = self._parse_timestamp(start) if start is not None else float('-inf')
+        end_ts = self._parse_timestamp(end) if end is not None else float('inf')
+        return [
+            point for point in task.trend_data
+            if start_ts <= self._parse_timestamp(point.get('timestamp')) <= end_ts
+        ]
+
+    def _parse_timestamp(self, value: Any) -> float:
+        if value is None:
+            return 0.0
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                try:
+                    return datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp()
+                except ValueError:
+                    return 0.0
+        return 0.0
 
     def stop(self, task_id: str) -> None:
         logger.info('Stopping FIO task %s', task_id)

@@ -9,7 +9,7 @@ from app.utils.helpers import ApiError, success_response
 
 @api_bp.get('/devices')
 def list_devices():
-    return success_response([device.to_dict() for device in DeviceService.list_all()])
+    return success_response([device.to_dict() for device in DeviceService.list_all(refresh_agent_status=True)])
 
 
 @api_bp.post('/devices')

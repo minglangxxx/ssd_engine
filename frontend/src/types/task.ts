@@ -5,8 +5,6 @@ export interface Task {
   name: string;
   status: TaskStatus;
   device_ip: string;
-  device_user: string;
-  device_password: string;
   device_path: string;
   config: FioConfig;
   fault_type?: string;
@@ -86,10 +84,9 @@ export interface FioTrendPoint {
 export interface TaskCreateParams {
   name?: string;
   device_ip: string;
-  device_user: string;
-  device_password: string;
   device_path: string;
   config: Partial<FioConfig>;
+  fio_command?: string;
   fault_type?: 'none' | 'power_off' | 'drop_device';
 }
 

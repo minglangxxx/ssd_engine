@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from app.executors.agent_executor import AgentExecutor
@@ -19,7 +19,10 @@ class TaskService:
     @staticmethod
     def create(data: dict) -> Task:
         logger.info(f"Creating new task for device {data['device_ip']}")
+        raw_command = data.get('fio_command')
         config = data.get('config', {})
+        if raw_command:
+            config = FioConfigValidator.parse_cli_command(raw_command, data.get('device_path'))
         errors = FioConfigValidator.validate(config)
         if errors:
             logger.error(f"Configuration validation failed: {errors}")
@@ -31,8 +34,6 @@ class TaskService:
             device = Device(
                 ip=data['device_ip'],
                 name=data.get('name') or data['device_ip'],
-                ssh_user=data.get('device_user'),
-                ssh_password=data.get('device_password'),
             )
             db.session.add(device)
             db.session.flush()
@@ -42,8 +43,6 @@ class TaskService:
             name=data.get('name') or f"FIO-{data['device_ip']}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
             device_id=device.id,
             device_ip=data['device_ip'],
-            device_user=data.get('device_user'),
-            device_password=data.get('device_password'),
             device_path=data['device_path'],
             config=FioConfigValidator.apply_defaults(config),
             fault_type=data.get('fault_type', 'none'),
@@ -210,7 +209,7 @@ class TaskService:
                     task.status = mapped_status
                     task.updated_at = datetime.utcnow()
                     db.session.commit()
-                    logger.info(f"Updated task {task.id} status to {mapped_status.value}")
+                    logger.info(f"Updated task {task.id} status to {mapped_status}")
                 return task
 
             if remote_status == 'success':
@@ -234,6 +233,45 @@ class TaskService:
             return task
         finally:
             agent.close()
+
+    @staticmethod
+    def get_execution_window(
+        task: Task,
+        window_before_seconds: int = 30,
+        window_after_seconds: int = 30,
+    ) -> dict[str, str | float | None]:
+        start_time, end_time = TaskService._get_runtime_window_from_agent(task)
+
+        if start_time is None or end_time is None:
+            trend_start, trend_end = TaskService._get_runtime_window_from_db(task.id)
+            start_time = start_time or trend_start
+            end_time = end_time or trend_end
+
+        if start_time is None:
+            start_time = task.created_at or datetime.utcnow()
+
+        if end_time is None:
+            configured_runtime = int((task.config or {}).get('runtime') or 0)
+            fallback_end = task.updated_at or start_time
+            if configured_runtime > 0 and fallback_end <= start_time:
+                fallback_end = start_time + timedelta(seconds=configured_runtime)
+            end_time = fallback_end
+
+        if end_time < start_time:
+            end_time = start_time
+
+        analysis_start = start_time - timedelta(seconds=max(0, window_before_seconds))
+        analysis_end = end_time + timedelta(seconds=max(0, window_after_seconds))
+
+        return {
+            'fio_start': start_time.isoformat(),
+            'fio_end': end_time.isoformat(),
+            'analysis_start': analysis_start.isoformat(),
+            'analysis_end': analysis_end.isoformat(),
+            'window_before_seconds': max(0, window_before_seconds),
+            'window_after_seconds': max(0, window_after_seconds),
+            'duration_seconds': max(0.0, (end_time - start_time).total_seconds()),
+        }
 
     @staticmethod
     def _start_task(task: Task, device: Device) -> None:
@@ -262,6 +300,39 @@ class TaskService:
             logger.error(f"Task {task.id} is associated with non-existent device ID: {task.device_id}")
             raise ApiError('NOT_FOUND', '任务关联设备不存在', 404)
         return device
+
+    @staticmethod
+    def _get_runtime_window_from_agent(task: Task) -> tuple[datetime | None, datetime | None]:
+        if not task.device_id:
+            return None, None
+
+        device = Device.query.get(task.device_id)
+        if device is None:
+            return None, None
+
+        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
+        try:
+            if not agent.test_connection():
+                return None, None
+            status_payload = agent.fio_status(str(task.id))
+            return (
+                TaskService._parse_timestamp(status_payload.get('start_time')),
+                TaskService._parse_timestamp(status_payload.get('end_time')),
+            )
+        except Exception as error:
+            logger.warning('Failed to read execution window from agent for task %s: %s', task.id, error)
+            return None, None
+        finally:
+            agent.close()
+
+    @staticmethod
+    def _get_runtime_window_from_db(task_id: int) -> tuple[datetime | None, datetime | None]:
+        first_point = FioTrendData.query.filter_by(task_id=task_id).order_by(FioTrendData.timestamp.asc()).first()
+        last_point = FioTrendData.query.filter_by(task_id=task_id).order_by(FioTrendData.timestamp.desc()).first()
+        return (
+            first_point.timestamp if first_point else None,
+            last_point.timestamp if last_point else None,
+        )
 
     @staticmethod
     def _replace_trend_points(task_id: int, points: list[dict[str, Any]]) -> None:

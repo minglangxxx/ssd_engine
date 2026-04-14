@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, Select, Row, Col, Statistic, Checkbox, Descriptions, Space, Progress } from 'antd';
 import ReactECharts from 'echarts-for-react';
 import TimeRangeSelector from '@/components/TimeRangeSelector/index';
@@ -20,6 +20,17 @@ const MonitorHost: React.FC = () => {
   });
   const { data: monitorData, refetch } = useHostMonitor(selectedHost, timeRange);
   const { data: summary } = useHostSummary(selectedHost);
+
+  useEffect(() => {
+    if (!devices?.length) {
+      return;
+    }
+
+    const hasSelectedHost = devices.some((device) => device.ip === selectedHost);
+    if (!selectedHost || !hasSelectedHost) {
+      setSelectedHost(devices[0].ip);
+    }
+  }, [devices, selectedHost]);
 
   usePolling({ fn: () => refetch(), enabled: autoRefresh && !!selectedHost, interval: 5000 });
 

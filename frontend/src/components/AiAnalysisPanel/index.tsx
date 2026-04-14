@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Button, Checkbox, Space, Spin, Divider, Tag, message } from 'antd';
+import { Card, Button, Checkbox, Space, Spin, Divider, Tag, message, InputNumber, Typography } from 'antd';
 import { RobotOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import { useAiAnalysis, useTriggerAnalysis } from '@/hooks/useAiAnalysis';
@@ -23,6 +23,8 @@ const AiAnalysisSection: React.FC<AiAnalysisSectionProps> = ({ taskId, status })
     include_fio: true,
     include_host_monitor: true,
     include_disk_monitor: true,
+    window_before_seconds: 30,
+    window_after_seconds: 30,
   });
 
   const { data: analysisResult, refetch } = useAiAnalysis(taskId);
@@ -77,17 +79,52 @@ const AiAnalysisSection: React.FC<AiAnalysisSectionProps> = ({ taskId, status })
         </Button>
         <Checkbox.Group
           value={Object.entries(scope)
-            .filter(([, v]) => v)
+            .filter(([key, value]) => key.startsWith('include_') && value)
             .map(([k]) => k)}
           onChange={(vals) => {
-            setScope({
+            setScope((prev) => ({
+              ...prev,
               include_fio: vals.includes('include_fio'),
               include_host_monitor: vals.includes('include_host_monitor'),
               include_disk_monitor: vals.includes('include_disk_monitor'),
-            });
+            }));
           }}
           options={scopeOptions}
         />
+      </Space>
+
+      <Space wrap style={{ marginTop: 12 }}>
+        <Typography.Text type="secondary">分析窗口</Typography.Text>
+        <Space size={4}>
+          <Typography.Text>前置</Typography.Text>
+          <InputNumber
+            min={0}
+            max={3600}
+            value={scope.window_before_seconds}
+            onChange={(value) => {
+              setScope((prev) => ({
+                ...prev,
+                window_before_seconds: typeof value === 'number' ? value : 0,
+              }));
+            }}
+          />
+          <Typography.Text type="secondary">秒</Typography.Text>
+        </Space>
+        <Space size={4}>
+          <Typography.Text>后置</Typography.Text>
+          <InputNumber
+            min={0}
+            max={3600}
+            value={scope.window_after_seconds}
+            onChange={(value) => {
+              setScope((prev) => ({
+                ...prev,
+                window_after_seconds: typeof value === 'number' ? value : 0,
+              }));
+            }}
+          />
+          <Typography.Text type="secondary">秒</Typography.Text>
+        </Space>
       </Space>
 
       {analysisResult?.status === 'analyzing' && (
@@ -124,6 +161,12 @@ const AiAnalysisSection: React.FC<AiAnalysisSectionProps> = ({ taskId, status })
       {analysisResult?.status === 'failed' && (
         <div style={{ padding: 16, color: '#ff4d4f' }}>
           分析失败: {analysisResult.error || '未知错误'}
+        </div>
+      )}
+
+      {analysisResult?.status === 'idle' && (
+        <div style={{ padding: 16, color: '#8c8c8c' }}>
+          当前任务还没有分析结果。任务完成后点击“开始AI分析”，系统会结合 FIO 指标以及所选前后时间窗内的主机、磁盘监控数据生成报告。
         </div>
       )}
     </Card>

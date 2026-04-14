@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Table,
   Button,
@@ -13,7 +13,7 @@ import {
   Descriptions,
   Card,
 } from 'antd';
-import { PlusOutlined, ApiOutlined } from '@ant-design/icons';
+import { PlusOutlined, ApiOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { deviceApi } from '@/api/device';
 import { formatTime } from '@/utils/format';
@@ -27,10 +27,19 @@ const DeviceManage: React.FC = () => {
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [form] = Form.useForm();
 
-  const { data: devices, isLoading } = useQuery({
+  const { data: devices, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['devices'],
     queryFn: () => deviceApi.list(),
+    refetchOnMount: 'always',
   });
+
+  useEffect(() => {
+    if (!selectedDevice || !devices) {
+      return;
+    }
+    const latestSelectedDevice = devices.find((item) => item.id === selectedDevice.id) || null;
+    setSelectedDevice(latestSelectedDevice);
+  }, [devices, selectedDevice]);
 
   const addMutation = useMutation({
     mutationFn: deviceApi.add,
@@ -64,14 +73,20 @@ const DeviceManage: React.FC = () => {
 
   const testMutation = useMutation({
     mutationFn: deviceApi.testConnection,
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       if (result.success) {
         message.success('连接成功');
+        await refetch();
       } else {
         message.error(`连接失败: ${result.message}`);
       }
     },
   });
+
+  const handleRefreshStatus = async () => {
+    await refetch();
+    message.success('设备状态已刷新');
+  };
 
   const handleSubmit = async () => {
     const values = await form.validateFields();
@@ -131,17 +146,22 @@ const DeviceManage: React.FC = () => {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
         <h2 style={{ margin: 0 }}>设备管理</h2>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => {
-            setEditingDevice(null);
-            form.resetFields();
-            setModalVisible(true);
-          }}
-        >
-          添加设备
-        </Button>
+        <Space>
+          <Button icon={<ReloadOutlined />} loading={isFetching && !isLoading} onClick={handleRefreshStatus}>
+            刷新状态
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => {
+              setEditingDevice(null);
+              form.resetFields();
+              setModalVisible(true);
+            }}
+          >
+            添加设备
+          </Button>
+        </Space>
       </div>
 
       <Table
@@ -166,6 +186,7 @@ const DeviceManage: React.FC = () => {
               {selectedDevice.disks?.join(', ') || '-'}
             </Descriptions.Item>
             <Descriptions.Item label="版本">{selectedDevice.agent_version}</Descriptions.Item>
+              <Descriptions.Item label="最后心跳">{selectedDevice.last_heartbeat ? formatTime(selectedDevice.last_heartbeat) : '-'}</Descriptions.Item>
             <Descriptions.Item label="状态">
               <Tag color={selectedDevice.agent_status === 'online' ? 'green' : 'red'}>
                 {selectedDevice.agent_status}
@@ -173,6 +194,9 @@ const DeviceManage: React.FC = () => {
             </Descriptions.Item>
           </Descriptions>
           <Space style={{ marginTop: 12 }}>
+            <Button icon={<ReloadOutlined />} loading={isFetching && !isLoading} onClick={handleRefreshStatus}>
+              刷新状态
+            </Button>
             <Button
               icon={<ApiOutlined />}
               loading={testMutation.isPending}

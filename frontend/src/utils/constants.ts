@@ -47,6 +47,76 @@ export const FAULT_TYPE_OPTIONS = [
   { value: 'drop_device', label: '设备掉盘' },
 ];
 
+export const TASK_TEMPLATE_OPTIONS = [
+  { value: 'randread-latency', label: '4k 随机读延迟' },
+  { value: 'randwrite-pressure', label: '4k 随机写压力' },
+  { value: 'seqread-throughput', label: '128k 顺序读吞吐' },
+  { value: 'seqwrite-throughput', label: '128k 顺序写吞吐' },
+  { value: 'mixed-7030', label: '70/30 混合读写' },
+  { value: 'steady-state', label: 'SSD 稳态压力' },
+  { value: 'custom', label: '自定义' },
+];
+
+export const TASK_TEMPLATE_PRESETS = {
+  'randread-latency': {
+    rw: 'randread',
+    bs: '4k',
+    numjobs: 1,
+    iodepth: 1,
+    runtime: 60,
+    time_based: true,
+    direct: true,
+  },
+  'randwrite-pressure': {
+    rw: 'randwrite',
+    bs: '4k',
+    numjobs: 4,
+    iodepth: 32,
+    runtime: 120,
+    time_based: true,
+    direct: true,
+  },
+  'seqread-throughput': {
+    rw: 'read',
+    bs: '128k',
+    numjobs: 1,
+    iodepth: 32,
+    runtime: 60,
+    time_based: true,
+    direct: true,
+  },
+  'seqwrite-throughput': {
+    rw: 'write',
+    bs: '128k',
+    numjobs: 1,
+    iodepth: 32,
+    runtime: 60,
+    time_based: true,
+    direct: true,
+  },
+  'mixed-7030': {
+    rw: 'randrw',
+    bs: '4k',
+    numjobs: 4,
+    iodepth: 32,
+    runtime: 120,
+    time_based: true,
+    direct: true,
+    rwmixread: 70,
+    rwmixwrite: 30,
+  },
+  'steady-state': {
+    rw: 'randwrite',
+    bs: '4k',
+    size: '1G',
+    numjobs: 4,
+    iodepth: 64,
+    runtime: 300,
+    time_based: true,
+    direct: true,
+  },
+} as const;
+
 export const DATA_STATUS_MAP: Record<string, { color: string; text: string }> = {
   active: { color: 'green', text: '活跃' },
   archived: { color: 'orange', text: '归档' },

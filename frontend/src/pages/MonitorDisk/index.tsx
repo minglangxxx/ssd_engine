@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, Select, Row, Col, Checkbox, Space, Descriptions, Tag } from 'antd';
 import ReactECharts from 'echarts-for-react';
 import TimeRangeSelector from '@/components/TimeRangeSelector/index';
@@ -21,6 +21,18 @@ const MonitorDisk: React.FC = () => {
   });
   const { data: diskList } = useDiskList(selectedHost);
   const { data: monitorData, refetch } = useDiskMonitor(selectedHost, selectedDisks, timeRange);
+
+  useEffect(() => {
+    if (!devices?.length) {
+      return;
+    }
+
+    const hasSelectedHost = devices.some((device) => device.ip === selectedHost);
+    if (!selectedHost || !hasSelectedHost) {
+      setSelectedHost(devices[0].ip);
+      setSelectedDisks([]);
+    }
+  }, [devices, selectedHost]);
 
   usePolling({ fn: () => refetch(), enabled: autoRefresh && selectedDisks.length > 0, interval: 5000 });
 
