@@ -1,5 +1,9 @@
 import dayjs from 'dayjs';
 
+export function formatApiDateTime(time?: dayjs.ConfigType): string {
+  return dayjs(time).format('YYYY-MM-DDTHH:mm:ss.SSSZ');
+}
+
 export function formatTime(time: string): string {
   return dayjs(time).format('YYYY-MM-DD HH:mm:ss');
 }

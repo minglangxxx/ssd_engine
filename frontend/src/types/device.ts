@@ -1,3 +1,10 @@
+export interface DeviceDisk {
+  name: string;
+  device: string;
+  mountpoint?: string;
+  fstype?: string;
+}
+
 export interface Device {
   id: number;
   ip: string;
@@ -9,6 +16,10 @@ export interface Device {
   disks: string[];
   created_at: string;
   updated_at: string;
+}
+
+export interface DeviceInfo extends Omit<Device, 'disks'> {
+  disks: DeviceDisk[];
 }
 
 export interface DeviceAddParams {

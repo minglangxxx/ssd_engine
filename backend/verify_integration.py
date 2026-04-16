@@ -191,6 +191,11 @@ def main():
         get_data = get_resp.get_json()
         assert get_data['status'] == 'SUCCESS', get_data
         assert get_data['result']['iops'] == 1234, get_data
+        assert get_data['config']['rw'] == 'randread', get_data
+        assert get_data['config']['runtime'] == 10, get_data
+        assert 'direct' not in get_data['config'], get_data
+        assert 'iodepth' not in get_data['config'], get_data
+        assert 'verify_fatal' not in get_data['config'], get_data
 
         trend_resp = client.get(f"/api/tasks/{task_data['id']}/trend")
         assert trend_resp.status_code == 200, trend_resp.data

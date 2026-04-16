@@ -8,6 +8,7 @@ import TaskStatusBadge from '@/components/TaskStatusBadge/index';
 import FioTrendSection from './FioTrendSection';
 import AiAnalysisSection from '@/components/AiAnalysisPanel/index';
 import { formatTime, formatDuration, formatNumber, formatBytes } from '@/utils/format';
+import { buildFioCommand } from '@/types/task';
 
 const TaskDetail: React.FC = () => {
   const { id } = useParams();
@@ -23,6 +24,7 @@ const TaskDetail: React.FC = () => {
   }
 
   const result = task.result;
+  const fioCommand = buildFioCommand(task.config, task.device_path, task.id);
 
   return (
     <div>
@@ -62,6 +64,22 @@ const TaskDetail: React.FC = () => {
           <Descriptions.Item label="IO深度">{task.config.iodepth || 32}</Descriptions.Item>
           <Descriptions.Item label="运行时间">{task.config.runtime ? `${task.config.runtime}s` : '-'}</Descriptions.Item>
         </Descriptions>
+        <div
+          style={{
+            marginTop: 16,
+            padding: 12,
+            background: '#fafafa',
+            border: '1px solid #f0f0f0',
+            borderRadius: 6,
+            fontFamily: 'Consolas, Monaco, monospace',
+            fontSize: 12,
+            lineHeight: 1.6,
+            wordBreak: 'break-all',
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {fioCommand}
+        </div>
       </Card>
 
       {/* 测试结果汇总 */}

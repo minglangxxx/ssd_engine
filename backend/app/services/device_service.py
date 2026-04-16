@@ -122,7 +122,25 @@ class DeviceService:
             if agent.test_connection():
                 logger.debug(f"Fetching disk list for device {device.ip}")
                 disks = agent.get_disk_list()
-                data['disks'] = [disk.get('name') if isinstance(disk, dict) else disk for disk in disks]
+                normalized_disks = []
+                for disk in disks:
+                    if isinstance(disk, dict):
+                        name = disk.get('name') or ''
+                        device_path = disk.get('device') or (f"/dev/{name}" if name else '')
+                        normalized_disks.append({
+                            'name': name,
+                            'device': device_path,
+                            'mountpoint': disk.get('mountpoint', ''),
+                            'fstype': disk.get('fstype', ''),
+                        })
+                    elif isinstance(disk, str):
+                        normalized_disks.append({
+                            'name': disk,
+                            'device': f'/dev/{disk}',
+                            'mountpoint': '',
+                            'fstype': '',
+                        })
+                data['disks'] = normalized_disks
                 logger.info(f"Retrieved {len(disks)} disks for device {device.ip}")
             else:
                 logger.warning(f"Agent connection failed when fetching device info for {device.ip}")

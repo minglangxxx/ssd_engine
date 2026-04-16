@@ -34,16 +34,13 @@ import {
   TASK_TEMPLATE_OPTIONS,
   TASK_TEMPLATE_PRESETS,
 } from '@/utils/constants';
-import type { Device } from '@/types/device';
+import type { Device, DeviceDisk } from '@/types/device';
 
 type TaskTemplateKey = keyof typeof TASK_TEMPLATE_PRESETS | 'custom';
 
-const DEFAULT_TEMPLATE: TaskTemplateKey = 'randread-latency';
+const DEFAULT_TEMPLATE: TaskTemplateKey = 'custom';
 
-const DEFAULT_CONFIG: Partial<FioConfig> = {
-  ...TASK_TEMPLATE_PRESETS[DEFAULT_TEMPLATE],
-  size: '1G',
-};
+const DEFAULT_CONFIG: Partial<FioConfig> = {};
 
 const RAW_COMMAND_PLACEHOLDER = 'fio --rw=randread --bs=4k --iodepth=32 --numjobs=4 --runtime=60 --time_based=1 --direct=1';
 
@@ -107,7 +104,7 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
       return;
     }
 
-    if (!selectedDeviceInfo?.disks?.length || !selectedDeviceInfo.disks.includes(currentPath)) {
+    if (!selectedDeviceInfo?.disks?.length || !selectedDeviceInfo.disks.some((disk) => disk.device === currentPath)) {
       form.setFieldValue('device_path', undefined);
     }
   }, [form, selectedDeviceInfo, visible]);
@@ -132,18 +129,22 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
     label: `${device.name} (${device.ip})`,
   }));
 
-  const diskOptions = (selectedDeviceInfo?.disks || []).map((disk) => ({
-    value: disk,
-    label: disk,
+  const diskOptions = (selectedDeviceInfo?.disks || []).map((disk: DeviceDisk) => ({
+    value: disk.device,
+    label: disk.device === disk.name ? disk.name : `${disk.name} (${disk.device})`,
   }));
 
   const configSummary = [
-    `模式 ${selectedConfig.rw || DEFAULT_CONFIG.rw}`,
-    `块大小 ${selectedConfig.bs || DEFAULT_CONFIG.bs}`,
-    `并发 ${selectedConfig.numjobs ?? DEFAULT_CONFIG.numjobs}`,
-    `队列 ${selectedConfig.iodepth ?? DEFAULT_CONFIG.iodepth}`,
-    `${selectedConfig.time_based === false ? '按数据量' : '按时间'} ${selectedConfig.runtime ?? DEFAULT_CONFIG.runtime}s`,
-    `direct ${selectedConfig.direct === false ? 'off' : 'on'}`,
+    `模式 ${selectedConfig.rw || 'fio 默认'}`,
+    `块大小 ${selectedConfig.bs || 'fio 默认'}`,
+    `并发 ${selectedConfig.numjobs ?? 'fio 默认'}`,
+    `队列 ${selectedConfig.iodepth ?? 'fio 默认'}`,
+    selectedConfig.time_based === true
+      ? `按时间 ${selectedConfig.runtime ?? 'fio 默认'}s`
+      : selectedConfig.time_based === false
+        ? `按数据量 ${selectedConfig.size || 'fio 默认'}`
+        : '运行条件 fio 默认',
+    selectedConfig.direct == null ? 'direct fio 默认' : `direct ${selectedConfig.direct ? 'on' : 'off'}`,
   ].join(' / ');
 
   const handleSubmit = async () => {
@@ -189,7 +190,7 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
           input_mode: 'guided',
           template: DEFAULT_TEMPLATE,
           fault_type: 'none',
-          config: DEFAULT_CONFIG,
+          config: {},
         }}
       >
         {/* 任务名称 */}
@@ -278,7 +279,7 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
         <Card title="核心配置" size="small" style={{ marginBottom: 16 }}>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name={['config', 'rw']} label="读写模式" rules={[{ required: true }]}>
+              <Form.Item name={['config', 'rw']} label="读写模式" rules={[{ required: true, message: '请选择读写模式' }]}>
                 <Select options={RW_OPTIONS} />
               </Form.Item>
             </Col>
@@ -322,14 +323,14 @@ const TaskCreateModal: React.FC<TaskCreateModalProps> = ({ visible, onClose, onS
               </>
             )}
           </Row>
-          <Form.Item name={['config', 'time_based']} valuePropName="checked" initialValue={true}>
+          <Form.Item name={['config', 'time_based']} valuePropName="checked">
             <Checkbox>基于时间完成</Checkbox>
           </Form.Item>
           <Alert
             type="info"
             showIcon
             message="当前测试摘要"
-            description={configSummary}
+            description={`仅会提交你显式填写或通过模板带入的参数。${configSummary}`}
           />
         </Card>
         )}

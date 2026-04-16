@@ -1,5 +1,5 @@
 import request from '@/utils/request';
-import type { Device, DeviceAddParams, DeviceUpdateParams } from '@/types/device';
+import type { Device, DeviceAddParams, DeviceInfo, DeviceUpdateParams } from '@/types/device';
 
 export const deviceApi = {
   list: () =>
@@ -15,7 +15,7 @@ export const deviceApi = {
     request.delete<unknown, void>(`/devices/${id}`),
 
   getInfo: (id: number) =>
-    request.get<unknown, Device>(`/devices/${id}/info`),
+    request.get<unknown, DeviceInfo>(`/devices/${id}/info`),
 
   testConnection: (params: { ip: string; user: string; password: string }) => {
     // 如果密码为空，则设置默认值

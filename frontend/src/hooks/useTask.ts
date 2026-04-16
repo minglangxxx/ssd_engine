@@ -3,6 +3,7 @@ import { taskApi } from '@/api/task';
 import type { TaskListParams, TaskCreateParams } from '@/types/task';
 import type { TimeRange } from '@/types/monitor';
 import dayjs from 'dayjs';
+import { formatApiDateTime } from '@/utils/format';
 
 export const useTaskList = (params?: TaskListParams) =>
   useQuery({
@@ -38,8 +39,8 @@ function buildTrendParams(opts?: { timeRange?: TimeRange; customRange?: [dayjs.D
   const { timeRange, customRange } = opts;
   if (timeRange === 'custom' && customRange) {
     return {
-      start: customRange[0].toISOString(),
-      end: customRange[1].toISOString(),
+      start: formatApiDateTime(customRange[0]),
+      end: formatApiDateTime(customRange[1]),
     };
   }
   if (timeRange && timeRange !== 'all') {
@@ -54,8 +55,8 @@ function buildTrendParams(opts?: { timeRange?: TimeRange; customRange?: [dayjs.D
     const entry = unitMap[timeRange];
     if (entry) {
       return {
-        start: dayjs().subtract(entry[0], entry[1]).toISOString(),
-        end: dayjs().toISOString(),
+        start: formatApiDateTime(dayjs().subtract(entry[0], entry[1])),
+        end: formatApiDateTime(dayjs()),
       };
     }
   }

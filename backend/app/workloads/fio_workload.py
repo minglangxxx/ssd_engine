@@ -86,13 +86,11 @@ class FioConfigValidator:
 
     @staticmethod
     def apply_defaults(config: dict[str, Any]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        for key, spec in FIO_PARAMETERS.items():
-            if key in config and config[key] is not None:
-                result[key] = config[key]
-            elif spec.get('default') is not None:
-                result[key] = spec['default']
-        return result
+        return {
+            key: value
+            for key, value in config.items()
+            if key in FIO_PARAMETERS and value is not None
+        }
 
     @staticmethod
     def parse_cli_command(command: str, device_path: str | None = None) -> dict[str, Any]:

@@ -119,3 +119,46 @@ export function buildFioConfig(config: Partial<FioConfig>): Record<string, unkno
   }
   return result;
 }
+
+const FIO_OPTION_MAP: Record<string, string> = {
+  mem: 'iomem',
+};
+
+function formatFioOption(key: string, value: unknown): string | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  if (key === 'filename' || key === 'stats_interval') {
+    return null;
+  }
+
+  const fioKey = FIO_OPTION_MAP[key] || key;
+  if (typeof value === 'boolean') {
+    return `--${fioKey}=${value ? 1 : 0}`;
+  }
+
+  return `--${fioKey}=${value}`;
+}
+
+export function buildFioCommand(config: Partial<FioConfig>, devicePath: string, taskId: number): string {
+  const rawStatusInterval = config.stats_interval;
+  const statusInterval = rawStatusInterval == null ? 1 : Math.max(1, Math.ceil(Number(rawStatusInterval) / 1000));
+  const command = [
+    'fio',
+    `--name=task_${taskId}`,
+    `--filename=${devicePath}`,
+    '--output-format=json',
+    '--group_reporting=1',
+    `--status-interval=${statusInterval}`,
+  ];
+
+  for (const [key, value] of Object.entries(config)) {
+    const option = formatFioOption(key, value);
+    if (option) {
+      command.push(option);
+    }
+  }
+
+  return command.join(' ');
+}

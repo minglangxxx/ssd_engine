@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { monitorApi } from '@/api/monitor';
 import type { TimeRange } from '@/types/monitor';
 import dayjs from 'dayjs';
+import { formatApiDateTime } from '@/utils/format';
 
 function buildTimeParams(timeRange: TimeRange) {
   if (timeRange === 'all') return undefined;
@@ -16,8 +17,8 @@ function buildTimeParams(timeRange: TimeRange) {
   const entry = unitMap[timeRange];
   if (entry) {
     return {
-      start: dayjs().subtract(entry[0], entry[1]).toISOString(),
-      end: dayjs().toISOString(),
+      start: formatApiDateTime(dayjs().subtract(entry[0], entry[1])),
+      end: formatApiDateTime(dayjs()),
     };
   }
   return undefined;
