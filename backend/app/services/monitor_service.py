@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from app.executors.agent_executor import AgentExecutor
 from app.models.device import Device
+from app.models.monitor_data import DiskMonitorSample
 from app.services.device_service import DeviceService
 
 
@@ -76,10 +79,23 @@ class MonitorService:
 
     @staticmethod
     def get_disk_metrics(host: str, disk_name: str, start: str | None = None, end: str | None = None) -> list[dict]:
+        query = DiskMonitorSample.query.filter_by(device_ip=host, disk_name=disk_name)
+        start_time = MonitorService._parse_timestamp(start)
+        end_time = MonitorService._parse_timestamp(end)
+        if start_time is not None:
+            query = query.filter(DiskMonitorSample.event_time >= start_time)
+        if end_time is not None:
+            query = query.filter(DiskMonitorSample.event_time <= end_time)
+
+        if start or end:
+            return [item.to_dict() for item in query.order_by(DiskMonitorSample.event_time.asc()).all()]
+
+        latest = query.order_by(DiskMonitorSample.event_time.desc()).first()
+        if latest is not None:
+            return [latest.to_dict()]
+
         agent = MonitorService.get_agent(host)
         try:
-            if start or end:
-                return agent.get_disk_monitor_history(disk_name, start, end)
             return [agent.get_disk_monitor(disk_name)]
         finally:
             agent.close()
@@ -105,3 +121,15 @@ class MonitorService:
             }
         finally:
             agent.close()
+
+    @staticmethod
+    def _parse_timestamp(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except ValueError:
+            try:
+                return datetime.fromtimestamp(float(value))
+            except ValueError:
+                return None

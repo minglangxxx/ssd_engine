@@ -30,11 +30,13 @@ class FioTask:
         self.trend_data: deque[dict[str, Any]] = deque(maxlen=86400)
         self.start_time: float | None = None
         self.end_time: float | None = None
+        self.sample_interval_ms = max(1000, int(config.get('stats_interval') or 1000))
 
 
 class FioRunner:
-    def __init__(self):
+    def __init__(self, ingest_client=None):
         self.tasks: dict[str, FioTask] = {}
+        self.ingest_client = ingest_client
         logger.info('FIO Runner initialized')
 
     def start(self, task_id: str, config: dict[str, Any], device: str) -> None:
@@ -96,6 +98,14 @@ class FioRunner:
             logger.exception('Exception occurred while running FIO task %s', task.task_id)
         finally:
             task.end_time = time.time()
+            if self.ingest_client is not None:
+                self.ingest_client.flush_task(
+                    task.task_id,
+                    task.status,
+                    task.result if isinstance(task.result, dict) else ({'error': task.error} if task.error else None),
+                    task.start_time,
+                    task.end_time,
+                )
             logger.info(
                 'FIO task %s ended at %s',
                 task.task_id,
@@ -190,6 +200,13 @@ class FioRunner:
             point = self._build_trend_point(payload)
             if point is not None:
                 task.trend_data.append(point)
+                if self.ingest_client is not None:
+                    self.ingest_client.enqueue_fio_trend(
+                        task.task_id,
+                        task.device,
+                        task.sample_interval_ms,
+                        point,
+                    )
 
         return ''
 

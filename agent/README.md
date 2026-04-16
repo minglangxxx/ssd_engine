@@ -46,6 +46,25 @@ pip install -r requirements.txt
 
 ### 2. 启动 Agent
 
+推荐先在 agent 目录配置 `.env`：
+
+```env
+AGENT_HOST=0.0.0.0
+AGENT_PORT=8080
+AGENT_VERSION=0.1.0
+BACKEND_URL=http://127.0.0.1:5000
+AGENT_DEVICE_IP=127.0.0.1
+INGEST_TIMEOUT_SECONDS=5
+FIO_INGEST_INTERVAL_SECONDS=3
+DISK_INGEST_INTERVAL_SECONDS=3
+INGEST_BATCH_SIZE=20
+```
+
+其中：
+
+- `BACKEND_URL` 是 Backend 地址。
+- `AGENT_DEVICE_IP` 必须和 Backend 中该设备的 `devices.ip` 一致。
+
 ```bash
 python agent_server.py
 ```
@@ -57,6 +76,12 @@ python agent_server.py
 | `AGENT_HOST` | 监听地址 | `0.0.0.0` |
 | `AGENT_PORT` | 监听端口 | `8080` |
 | `AGENT_VERSION` | 版本号 | `0.1.0` |
+| `BACKEND_URL` | Backend 地址 | 空 |
+| `AGENT_DEVICE_IP` | Agent 对应设备 IP | 自动探测或空 |
+| `INGEST_TIMEOUT_SECONDS` | 上报超时秒数 | `5` |
+| `FIO_INGEST_INTERVAL_SECONDS` | FIO 趋势批量上报间隔 | `3` |
+| `DISK_INGEST_INTERVAL_SECONDS` | 磁盘监控批量上报间隔 | `3` |
+| `INGEST_BATCH_SIZE` | 批量上报最大条数 | `20` |
 
 ### 3. 验证
 

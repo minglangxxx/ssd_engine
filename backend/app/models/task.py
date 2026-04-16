@@ -22,6 +22,12 @@ class Task(db.Model):
     status = db.Column(db.String(20), nullable=False, default=TaskStatus.PENDING)
     result = db.Column(db.JSON, nullable=True)
     fault_type = db.Column(db.String(20), nullable=False, default='none')
+    started_at = db.Column(db.DateTime, nullable=True, index=True)
+    finished_at = db.Column(db.DateTime, nullable=True, index=True)
+    data_window_start = db.Column(db.DateTime, nullable=True)
+    data_window_end = db.Column(db.DateTime, nullable=True)
+    retention_policy = db.Column(db.JSON, nullable=True)
+    last_analysis_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -38,6 +44,12 @@ class Task(db.Model):
             'config': self.config,
             'fault_type': self.fault_type,
             'result': self.result,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'finished_at': self.finished_at.isoformat() if self.finished_at else None,
+            'data_window_start': self.data_window_start.isoformat() if self.data_window_start else None,
+            'data_window_end': self.data_window_end.isoformat() if self.data_window_end else None,
+            'retention_policy': self.retention_policy,
+            'last_analysis_at': self.last_analysis_at.isoformat() if self.last_analysis_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

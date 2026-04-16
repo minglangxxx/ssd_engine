@@ -37,3 +37,4 @@ class Config:
     AI_API_KEY = os.getenv('AI_API_KEY', '')
     AI_BASE_URL = os.getenv('AI_BASE_URL', 'https://api.openai.com/v1')
     AI_MODEL = os.getenv('AI_MODEL', 'gpt-4.1')
+    AI_ANALYSIS_MAX_AGE_DAYS = int(os.getenv('AI_ANALYSIS_MAX_AGE_DAYS', '7'))

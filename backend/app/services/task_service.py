@@ -5,6 +5,7 @@ from typing import Any
 
 from app.executors.agent_executor import AgentExecutor
 from app.extensions import db
+from app.models.data_record import DataRecord, DataStatus
 from app.models.device import Device
 from app.models.fio_trend import FioTrendData
 from app.models.task import Task, TaskStatus
@@ -162,25 +163,12 @@ class TaskService:
     def get_trend(task_id: int, start: str | None = None, end: str | None = None) -> list[dict]:
         logger.info(f"Getting trend data for task {task_id}, time range: {start} to {end}")
         task = TaskService.get(task_id)
-        device = Device.query.get(task.device_id) if task.device_id else None
-
-        if device:
-            agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
-            try:
-                if agent.test_connection():
-                    trend_data = agent.fio_trend(str(task_id), start, end)
-                    logger.info(f"Retrieved {len(trend_data)} trend points from agent for task {task_id}")
-                    return trend_data
-            except Exception as e:
-                logger.error(f"Error getting trend data from agent for task {task_id}: {str(e)}")
-            finally:
-                agent.close()
 
         query = FioTrendData.query.filter_by(task_id=task.id)
         if start:
-            query = query.filter(FioTrendData.timestamp >= datetime.fromisoformat(start))
+            query = query.filter(FioTrendData.timestamp >= TaskService._parse_timestamp(start))
         if end:
-            query = query.filter(FioTrendData.timestamp <= datetime.fromisoformat(end))
+            query = query.filter(FioTrendData.timestamp <= TaskService._parse_timestamp(end))
         trend_data = [item.to_dict() for item in query.order_by(FioTrendData.timestamp.asc()).all()]
         logger.info(f"Retrieved {len(trend_data)} trend points from database for task {task_id}")
         return trend_data
@@ -215,6 +203,10 @@ class TaskService:
             if remote_status == 'success':
                 task.status = TaskStatus.SUCCESS
                 task.result = status_payload.get('result') or task.result
+                task.started_at = TaskService._parse_timestamp(status_payload.get('start_time')) or task.started_at
+                task.finished_at = TaskService._parse_timestamp(status_payload.get('end_time')) or task.finished_at
+                task.data_window_start = task.started_at or task.data_window_start
+                task.data_window_end = task.finished_at or task.data_window_end
                 task.updated_at = datetime.utcnow()
                 TaskService._replace_trend_points(task.id, agent.fio_trend(str(task.id)))
                 db.session.commit()
@@ -226,6 +218,10 @@ class TaskService:
                 task.result = task.result or {}
                 if status_payload.get('error'):
                     task.result['error'] = status_payload.get('error')
+                task.started_at = TaskService._parse_timestamp(status_payload.get('start_time')) or task.started_at
+                task.finished_at = TaskService._parse_timestamp(status_payload.get('end_time')) or task.finished_at
+                task.data_window_start = task.started_at or task.data_window_start
+                task.data_window_end = task.finished_at or task.data_window_end
                 task.updated_at = datetime.utcnow()
                 TaskService._replace_trend_points(task.id, agent.fio_trend(str(task.id)))
                 db.session.commit()
@@ -240,7 +236,13 @@ class TaskService:
         window_before_seconds: int = 30,
         window_after_seconds: int = 30,
     ) -> dict[str, str | float | None]:
-        start_time, end_time = TaskService._get_runtime_window_from_agent(task)
+        start_time = task.started_at
+        end_time = task.finished_at
+
+        if start_time is None or end_time is None:
+            agent_start, agent_end = TaskService._get_runtime_window_from_agent(task)
+            start_time = start_time or agent_start
+            end_time = end_time or agent_end
 
         if start_time is None or end_time is None:
             trend_start, trend_end = TaskService._get_runtime_window_from_db(task.id)
@@ -337,14 +339,22 @@ class TaskService:
     @staticmethod
     def _replace_trend_points(task_id: int, points: list[dict[str, Any]]) -> None:
         logger.info(f"Replacing trend points for task {task_id}, received {len(points)} data points")
+        task = Task.query.get(task_id)
         FioTrendData.query.filter_by(task_id=task_id).delete()
+        first_timestamp: datetime | None = None
+        last_timestamp: datetime | None = None
         for point in points:
             timestamp = TaskService._parse_timestamp(point.get('timestamp'))
             if timestamp is None:
                 continue
+            first_timestamp = timestamp if first_timestamp is None else min(first_timestamp, timestamp)
+            last_timestamp = timestamp if last_timestamp is None else max(last_timestamp, timestamp)
             db.session.add(FioTrendData(
                 task_id=task_id,
+                device_ip=task.device_ip if task is not None else '',
+                device_path=task.device_path if task is not None else '',
                 timestamp=timestamp,
+                sample_interval_ms=max(1, int(point.get('sample_interval_ms') or 1000)),
                 iops_read=float(point.get('iops_read', 0) or 0),
                 iops_write=float(point.get('iops_write', 0) or 0),
                 iops_total=float(point.get('iops_total', 0) or 0),
@@ -354,8 +364,48 @@ class TaskService:
                 lat_mean=float(point.get('lat_mean', 0) or 0),
                 lat_p99=float(point.get('lat_p99', 0) or 0),
                 lat_max=float(point.get('lat_max', 0) or 0),
+                source=str(point.get('source') or 'agent_fio'),
             ))
+        if task is not None:
+            if first_timestamp is not None:
+                task.started_at = first_timestamp
+                task.data_window_start = first_timestamp
+            if last_timestamp is not None:
+                task.finished_at = last_timestamp
+                task.data_window_end = last_timestamp
+            TaskService._sync_fio_trend_record(task, len(points), first_timestamp, last_timestamp)
         logger.info(f"Trend points for task {task_id} replaced successfully")
+
+    @staticmethod
+    def _sync_fio_trend_record(
+        task: Task,
+        point_count: int,
+        first_timestamp: datetime | None,
+        last_timestamp: datetime | None,
+    ) -> None:
+        record = DataRecord.query.filter_by(
+            task_id=task.id,
+            data_type='fio_trend',
+            device_ip=task.device_ip,
+            query_scope='task',
+            status=DataStatus.ACTIVE.value,
+        ).first()
+        if record is None:
+            record = DataRecord(
+                task_id=task.id,
+                data_type='fio_trend',
+                device_ip=task.device_ip,
+                status=DataStatus.ACTIVE.value,
+                storage_backend='mysql',
+                storage_format='table',
+                hot_table_name='fio_trend_data',
+                query_scope='task',
+            )
+            db.session.add(record)
+
+        record.record_count = max(0, point_count)
+        record.window_start = first_timestamp
+        record.window_end = last_timestamp
 
     @staticmethod
     def _parse_timestamp(value: Any) -> datetime | None:
@@ -365,7 +415,7 @@ class TaskService:
             return datetime.fromtimestamp(value)
         if isinstance(value, str):
             try:
-                return datetime.fromisoformat(value)
+                return datetime.fromisoformat(value.replace('Z', '+00:00'))
             except ValueError:
                 try:
                     return datetime.fromtimestamp(float(value))

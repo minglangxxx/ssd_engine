@@ -12,6 +12,10 @@ def list_data_records():
         data_type=request.args.get('data_type'),
         status=request.args.get('status'),
         device_ip=request.args.get('device_ip'),
+        task_id=request.args.get('task_id', type=int),
+        disk_name=request.args.get('disk_name'),
+        window_start=request.args.get('window_start'),
+        window_end=request.args.get('window_end'),
         page=page,
         page_size=page_size,
     ))

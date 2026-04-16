@@ -29,7 +29,17 @@ class DataLifecycleService:
         return sum(item.size_bytes for item in DataRecord.query.filter_by(status=status).all())
 
     @staticmethod
-    def list_records(data_type: str | None, status: str | None, device_ip: str | None, page: int, page_size: int) -> dict:
+    def list_records(
+        data_type: str | None,
+        status: str | None,
+        device_ip: str | None,
+        task_id: int | None,
+        disk_name: str | None,
+        window_start: str | None,
+        window_end: str | None,
+        page: int,
+        page_size: int,
+    ) -> dict:
         query = DataRecord.query
         if data_type:
             query = query.filter_by(data_type=data_type)
@@ -37,6 +47,16 @@ class DataLifecycleService:
             query = query.filter_by(status=status)
         if device_ip:
             query = query.filter_by(device_ip=device_ip)
+        if task_id is not None:
+            query = query.filter_by(task_id=task_id)
+        if disk_name:
+            query = query.filter_by(disk_name=disk_name)
+        parsed_start = DataLifecycleService._parse_datetime(window_start)
+        parsed_end = DataLifecycleService._parse_datetime(window_end)
+        if parsed_start is not None:
+            query = query.filter(DataRecord.window_end >= parsed_start)
+        if parsed_end is not None:
+            query = query.filter(DataRecord.window_start <= parsed_end)
         pagination = query.order_by(DataRecord.created_at.desc()).paginate(page=page, per_page=page_size, error_out=False)
         return {'items': [item.to_dict() for item in pagination.items], 'total': pagination.total}
 
@@ -69,3 +89,12 @@ class DataLifecycleService:
                 if source and os.path.exists(source):
                     tar.add(source, arcname=os.path.basename(source))
         return archive_path
+
+    @staticmethod
+    def _parse_datetime(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except ValueError:
+            return None

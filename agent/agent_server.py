@@ -18,6 +18,7 @@ from collectors.smart_collector import SmartCollector
 from collectors.system_collector import SystemCollector
 from config import Config
 from executor.fio_runner import FioRunner
+from ingest_client import BackendIngestClient
 from logger import get_logger, setup_agent_logger
 
 # 初始化日志
@@ -87,7 +88,8 @@ disk_collector = DiskCollector()
 network_collector = NetworkCollector()
 system_collector = SystemCollector()
 smart_collector = SmartCollector()
-fio_runner = FioRunner()
+ingest_client = BackendIngestClient()
+fio_runner = FioRunner(ingest_client=ingest_client)
 buffer = MonitorRingBuffer()
 
 
@@ -104,6 +106,7 @@ def collect_background() -> None:
                 'disks': disk_collector.collect_all(),
             }
             buffer.append(snapshot)
+            ingest_client.enqueue_disk_metrics(snapshot['timestamp'], snapshot['disks'])
             time.sleep(1)
         except Exception as e:
             logger.error(f"Error in background monitoring collection: {str(e)}")

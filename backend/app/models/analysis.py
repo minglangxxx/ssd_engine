@@ -12,6 +12,10 @@ class AiAnalysis(db.Model):
     report = db.Column(db.Text, nullable=True)
     summary = db.Column(db.JSON, nullable=True)
     error = db.Column(db.Text, nullable=True)
+    data_window_start = db.Column(db.DateTime, nullable=True)
+    data_window_end = db.Column(db.DateTime, nullable=True)
+    input_manifest = db.Column(db.JSON, nullable=True)
+    source_snapshot_version = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     completed_at = db.Column(db.DateTime, nullable=True)
 
@@ -23,6 +27,10 @@ class AiAnalysis(db.Model):
             'report': self.report,
             'summary': self.summary,
             'error': self.error,
+            'data_window_start': self.data_window_start.isoformat() if self.data_window_start else None,
+            'data_window_end': self.data_window_end.isoformat() if self.data_window_end else None,
+            'input_manifest': self.input_manifest,
+            'source_snapshot_version': self.source_snapshot_version,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
         }
