@@ -16,4 +16,7 @@ export const dataApi = {
 
   delete: (ids: number[]) =>
     request.post<unknown, void>('/data/delete', { ids }),
+
+  compress: (ids: number[]) =>
+    request.post<unknown, void>('/data/compress', { ids }),
 };

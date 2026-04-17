@@ -106,6 +106,14 @@ def collect_background() -> None:
                 'disks': disk_collector.collect_all(),
             }
             buffer.append(snapshot)
+            # 推送主机监控数据到后端
+            host_metrics = {
+                'cpu': snapshot['cpu'],
+                'memory': snapshot['memory'],
+                'network': snapshot['network'],
+                'system': snapshot['system'],
+            }
+            ingest_client.enqueue_host_metrics(snapshot['timestamp'], host_metrics)
             ingest_client.enqueue_disk_metrics(snapshot['timestamp'], snapshot['disks'])
             time.sleep(1)
         except Exception as e:

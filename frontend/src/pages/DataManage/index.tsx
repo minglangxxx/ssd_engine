@@ -18,6 +18,7 @@ import {
   DownloadOutlined,
   InboxOutlined,
   DeleteOutlined,
+  CompressOutlined,
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataApi } from '@/api/data';
@@ -74,6 +75,16 @@ const DataManage: React.FC = () => {
       qc.invalidateQueries({ queryKey: ['data-list'] });
       qc.invalidateQueries({ queryKey: ['data-overview'] });
       message.success('删除成功');
+      setSelectedIds([]);
+    },
+  });
+
+  const compressMutation = useMutation({
+    mutationFn: dataApi.compress,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['data-list'] });
+      qc.invalidateQueries({ queryKey: ['data-overview'] });
+      message.success('压缩成功');
       setSelectedIds([]);
     },
   });
@@ -232,13 +243,24 @@ const DataManage: React.FC = () => {
           >
             批量下载
           </Button>
-          <Button
-            icon={<InboxOutlined />}
-            onClick={() => archiveMutation.mutate(selectedIds)}
-            loading={archiveMutation.isPending}
-          >
-            手动归档
-          </Button>
+          {data?.items?.every((item) => data.items.find((r) => selectedIds.includes(r.id))?.status === 'active') && (
+            <Button
+              icon={<InboxOutlined />}
+              onClick={() => archiveMutation.mutate(selectedIds)}
+              loading={archiveMutation.isPending}
+            >
+              手动归档
+            </Button>
+          )}
+          {data?.items?.every((item) => data.items.find((r) => selectedIds.includes(r.id))?.status === 'archived') && (
+            <Button
+              icon={<CompressOutlined />}
+              onClick={() => compressMutation.mutate(selectedIds)}
+              loading={compressMutation.isPending}
+            >
+              手动压缩
+            </Button>
+          )}
           <Popconfirm title="确认删除选中数据？" onConfirm={() => deleteMutation.mutate(selectedIds)}>
             <Button icon={<DeleteOutlined />} danger loading={deleteMutation.isPending}>
               手动删除

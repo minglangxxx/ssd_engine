@@ -141,10 +141,20 @@ CALL add_column_if_missing('data_records', 'hot_table_name', 'VARCHAR(128) NULL'
 CALL add_column_if_missing('data_records', 'checksum', 'VARCHAR(128) NULL');
 CALL add_column_if_missing('data_records', 'metadata', 'JSON NULL');
 CALL add_column_if_missing('data_records', 'query_scope', 'VARCHAR(64) NULL');
+CALL add_column_if_missing('data_records', 'version', 'INT NOT NULL DEFAULT 1');
+CALL add_column_if_missing('data_records', 'updated_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
 CALL add_index_if_missing('data_records', 'idx_data_records_disk_name', '(disk_name)');
 CALL add_index_if_missing('data_records', 'idx_data_records_window_start', '(window_start)');
 CALL add_index_if_missing('data_records', 'idx_data_records_window_end', '(window_end)');
 CALL add_index_if_missing('data_records', 'idx_data_records_query_scope', '(query_scope)');
+-- 新增缺失的关键索引
+CALL add_index_if_missing('data_records', 'idx_data_records_status', '(status)');
+CALL add_index_if_missing('data_records', 'idx_data_records_device_ip', '(device_ip)');
+CALL add_index_if_missing('data_records', 'idx_data_records_data_type', '(data_type)');
+CALL add_index_if_missing('data_records', 'idx_data_records_created_at', '(created_at DESC)');
+CALL add_index_if_missing('data_records', 'idx_data_records_version', '(id, version)');
+CALL add_index_if_missing('ai_analyses', 'idx_ai_analyses_task_created', '(task_id, created_at DESC)');
+CALL add_index_if_missing('disk_monitor_samples', 'idx_disk_monitor_device_ip', '(device_ip)');
 
 DROP PROCEDURE IF EXISTS add_column_if_missing;
 DROP PROCEDURE IF EXISTS add_index_if_missing;

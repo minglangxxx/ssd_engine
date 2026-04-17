@@ -28,6 +28,17 @@ def ingest_disk_monitor():
     return success_response(result, 201)
 
 
+@api_bp.post('/internal/ingest/host-monitor')
+def ingest_host_monitor():
+    """入库主机监控数据"""
+    payload = request.get_json(force=True) or {}
+    result = IngestService.ingest_host_monitor(
+        device_ip=str(payload.get('device_ip') or ''),
+        samples=payload.get('samples') or [],
+    )
+    return success_response(result, 201)
+
+
 @api_bp.post('/internal/ingest/flush-task')
 def flush_task():
     payload = request.get_json(force=True) or {}

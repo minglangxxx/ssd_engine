@@ -4,7 +4,9 @@ import json
 import socket
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+_CST = timezone(timedelta(hours=8))
 from typing import Any
 from urllib import error, request
 
@@ -28,17 +30,59 @@ class BackendIngestClient:
         self.disk_last_flush = time.monotonic()
         self.fio_batches: dict[str, dict[str, Any]] = {}
 
+        self.host_metrics_batch: dict[str, Any] = {}
+        self.host_metrics_last_flush = time.monotonic()
         if self.enabled:
             logger.info('Backend ingest enabled, backend=%s, device_ip=%s', self.backend_url, self.device_ip)
             threading.Thread(target=self._flush_loop, daemon=True).start()
         else:
             logger.info('Backend ingest disabled, backend_url=%s, device_ip=%s', self.backend_url or '', self.device_ip or '')
 
+    def enqueue_host_metrics(self, snapshot_timestamp: float, host_data: dict[str, Any]) -> None:
+        if not self.enabled or not host_data:
+            return
+
+        event_time = datetime.fromtimestamp(snapshot_timestamp, tz=_CST).isoformat()
+        payload = dict(host_data)
+        payload['timestamp'] = event_time
+        payload.setdefault('source', 'agent_host')
+
+        with self.lock:
+            self.host_metrics_batch = payload
+            should_flush = self._elapsed(self.host_metrics_last_flush) >= 5  # 每5秒推送一次主机监控
+
+        if should_flush:
+            self.flush_host_metrics()
+
+    def flush_host_metrics(self) -> None:
+        if not self.enabled:
+            return
+
+        with self.lock:
+            if not self.host_metrics_batch:
+                return
+            batch = dict(self.host_metrics_batch)
+
+        # 构造 ingest 接口期望的格式：samples 数组
+        payload = {
+            'device_ip': self.device_ip,
+            'samples': [{
+                'timestamp': batch.get('timestamp'),
+                'data_type': 'host_monitor',
+                'data': {k: v for k, v in batch.items() if k not in ('timestamp', 'source')},
+            }],
+        }
+
+        if self._post_json('/api/internal/ingest/host-monitor', payload):
+            with self.lock:
+                self.host_metrics_batch = {}
+                self.host_metrics_last_flush = time.monotonic()
+
     def enqueue_disk_metrics(self, snapshot_timestamp: float, disks: dict[str, dict[str, Any]]) -> None:
         if not self.enabled or not disks:
             return
 
-        event_time = datetime.utcfromtimestamp(snapshot_timestamp).isoformat()
+        event_time = datetime.fromtimestamp(snapshot_timestamp, tz=_CST).isoformat()
         samples = []
         for disk_name, metrics in disks.items():
             if not isinstance(metrics, dict):
@@ -143,6 +187,7 @@ class BackendIngestClient:
     def _flush_loop(self) -> None:
         while True:
             try:
+                self.flush_host_metrics()
                 self.flush_disk_metrics()
                 task_ids = []
                 with self.lock:
@@ -183,7 +228,7 @@ class BackendIngestClient:
     def _to_iso_datetime(self, timestamp: float | None) -> str | None:
         if timestamp is None:
             return None
-        return datetime.utcfromtimestamp(timestamp).isoformat()
+        return datetime.fromtimestamp(timestamp, tz=_CST).isoformat()
 
     def _elapsed(self, started_at: float) -> float:
         return time.monotonic() - started_at

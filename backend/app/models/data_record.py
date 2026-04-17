@@ -32,10 +32,12 @@ class DataRecord(db.Model):
     file_path = db.Column(db.String(500), nullable=True)
     compressed_path = db.Column(db.String(500), nullable=True)
     size_bytes = db.Column(db.BigInteger, nullable=False, default=0)
+    version = db.Column(db.Integer, nullable=False, default=1)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     archived_at = db.Column(db.DateTime, nullable=True)
     compressed_at = db.Column(db.DateTime, nullable=True)
     expires_at = db.Column(db.DateTime, nullable=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self) -> dict:
         return {

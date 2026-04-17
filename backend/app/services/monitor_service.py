@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from app.executors.agent_executor import AgentExecutor
 from app.models.device import Device
-from app.models.monitor_data import DiskMonitorSample
+from app.models.monitor_data import DiskMonitorSample, HostMonitorData
 from app.services.device_service import DeviceService
 
 
@@ -54,13 +54,27 @@ class MonitorService:
 
     @staticmethod
     def get_host_metrics(host: str, start: str | None = None, end: str | None = None) -> list[dict]:
-        agent = MonitorService.get_agent(host)
-        try:
-            if start or end:
-                return [MonitorService._flatten_host_point(item) for item in agent.get_host_monitor_history(start, end)]
-            return [MonitorService._flatten_host_point(agent.get_host_monitor())]
-        finally:
-            agent.close()
+        """
+        查询主机监控数据：严格从数据库查询，不访问 Agent API。
+        监控数据只来自数据库（由 Agent 定期推送写入），后续可接入 Redis 缓存层。
+        """
+        query = HostMonitorData.query.filter_by(device_ip=host)
+        start_time = MonitorService._parse_timestamp(start)
+        end_time = MonitorService._parse_timestamp(end)
+
+        if start_time is not None:
+            query = query.filter(HostMonitorData.created_at >= start_time)
+        if end_time is not None:
+            query = query.filter(HostMonitorData.created_at <= end_time)
+
+        db_records = query.order_by(HostMonitorData.created_at.asc()).all()
+
+        result = []
+        for record in db_records:
+            point = record.data.copy() if isinstance(record.data, dict) else {}
+            point['timestamp'] = record.created_at.isoformat() if record.created_at else None
+            result.append(MonitorService._flatten_host_point(point))
+        return result
 
     @staticmethod
     def get_disk_list(host: str) -> list[str]:
@@ -127,9 +141,14 @@ class MonitorService:
         if not value:
             return None
         try:
-            return datetime.fromisoformat(value.replace('Z', '+00:00'))
+            from datetime import timezone, timedelta
+            _CST = timezone(timedelta(hours=8))
+            dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(_CST).replace(tzinfo=None)
+            return dt
         except ValueError:
             try:
-                return datetime.fromtimestamp(float(value))
+                return datetime.fromtimestamp(float(value), tz=timezone(timedelta(hours=8))).replace(tzinfo=None)
             except ValueError:
                 return None
