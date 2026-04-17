@@ -119,3 +119,5 @@ src-tauri/target/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+backend/data/
