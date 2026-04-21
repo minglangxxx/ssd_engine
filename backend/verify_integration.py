@@ -26,7 +26,30 @@ class FakeChatCompletions:
         assert 'analysis_window' in user_prompt, user_prompt
         assert 'host_monitor' in user_prompt, user_prompt
         assert 'disk_monitor' in user_prompt, user_prompt
-        return FakeCompletion('## 结论\n- 指标整体正常\n建议继续观察磁盘繁忙度。')
+        return FakeCompletion(
+            '# SSD 性能分析报告\n'
+            '\n'
+            '## 性能评级\n'
+            'good\n'
+            '\n'
+            '## FIO 性能分析\n'
+            'IOPS 均值 1234，带宽 5678 KiB/s，延迟均值 1μs，整体表现良好。\n'
+            '\n'
+            '## 主机资源分析\n'
+            'CPU 利用率峰值 67%，内存使用率 53%，资源充足。\n'
+            '\n'
+            '## 磁盘运行态分析\n'
+            '磁盘利用率峰值 82%，await 2.1ms，处于正常范围。\n'
+            '\n'
+            '## 发现问题\n'
+            '- 指标整体正常\n'
+            '\n'
+            '## 优化建议\n'
+            '- 建议继续观察磁盘繁忙度\n'
+            '\n'
+            '## 总结\n'
+            '该 SSD 在当前负载下表现良好，暂无明显瓶颈。\n'
+        )
 
 
 class FakeChat:

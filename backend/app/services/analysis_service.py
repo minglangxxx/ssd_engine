@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta
 from numbers import Number
+from pathlib import Path
 
 from openai import OpenAI
 
@@ -16,6 +18,14 @@ from app.utils.helpers import ApiError
 
 
 MAX_CONTEXT_POINTS = 120
+
+PROMPTS_DIR = Path(__file__).resolve().parent.parent / 'prompts'
+
+
+def _load_prompt(filename: str) -> str:
+    """从 prompts 目录加载提示词文件，去除首尾空白。"""
+    path = PROMPTS_DIR / filename
+    return path.read_text(encoding='utf-8').strip()
 
 
 class AnalysisService:
@@ -167,13 +177,11 @@ class AnalysisService:
             raise ApiError('VALIDATION_ERROR', f'当前仅支持分析 {max_age_days} 天内完成的任务', 400)
 
     def _system_prompt(self) -> str:
-        return (
-            '你是一名专业的存储性能分析工程师和SSD测试专家。'
-            '请基于给定的FIO结果、主机监控和磁盘监控数据，给出性能评估、疑点发现、优化建议和总结。'
-        )
+        return _load_prompt('system_prompt.md')
 
     def _build_prompt(self, context: dict) -> str:
-        return '请分析以下 SSD 测试数据：\n' + json.dumps(context, ensure_ascii=False, indent=2, default=str)
+        template = _load_prompt('user_prompt_template.md')
+        return template + '\n' + json.dumps(context, ensure_ascii=False, indent=2, default=str)
 
     def _compress_series(self, points: list[dict]) -> list[dict]:
         if len(points) <= MAX_CONTEXT_POINTS:
@@ -225,18 +233,56 @@ class AnalysisService:
         return None
 
     def _extract_summary(self, report: str) -> dict:
+        """从 LLM 报告中提取结构化摘要。
+
+        优先匹配结构化格式（性能评级章节），回退到关键词匹配以兼容旧格式报告。
+        """
+        # ── 1. 性能评级：优先从「## 性能评级」章节提取 ──
         rating = 'normal'
-        lowered = report.lower()
-        if 'excellent' in lowered or '优秀' in report:
-            rating = 'excellent'
-        elif 'good' in lowered or '良好' in report:
-            rating = 'good'
-        elif 'poor' in lowered or '较差' in report or '异常' in report:
-            rating = 'poor'
+        rating_match = re.search(
+            r'##\s*性能评级\s*\n\s*(excellent|good|normal|poor)',
+            report,
+            re.IGNORECASE,
+        )
+        if rating_match:
+            rating = rating_match.group(1).lower()
+        else:
+            # 回退：关键词匹配（兼容旧格式报告）
+            lowered = report.lower()
+            if 'excellent' in lowered or '优秀' in report:
+                rating = 'excellent'
+            elif 'good' in lowered or '良好' in report:
+                rating = 'good'
+            elif 'poor' in lowered or '较差' in report or '异常' in report:
+                rating = 'poor'
+
+        # ── 2. 发现问题数：从「## 发现问题」章节统计列表项 ──
+        issues_section = re.search(
+            r'##\s*发现问题\s*\n(.*?)(?=\n##|\Z)',
+            report,
+            re.DOTALL,
+        )
+        if issues_section:
+            issues_found = len(re.findall(r'^\s*-\s+', issues_section.group(1), re.MULTILINE))
+        else:
+            issues_found = report.count('- ')
+
+        # ── 3. 优化建议数：从「## 优化建议」章节统计列表项 ──
+        suggestions_section = re.search(
+            r'##\s*优化建议\s*\n(.*?)(?=\n##|\Z)',
+            report,
+            re.DOTALL,
+        )
+        if suggestions_section:
+            suggestions_count = len(re.findall(r'^\s*-\s+', suggestions_section.group(1), re.MULTILINE))
+        else:
+            lowered = report.lower()
+            suggestions_count = report.count('建议') + lowered.count('suggest')
+
         return {
             'performance_rating': rating,
-            'issues_found': report.count('- '),
-            'suggestions_count': report.count('建议') + lowered.count('suggest'),
+            'issues_found': issues_found,
+            'suggestions_count': suggestions_count,
         }
 
     @staticmethod
