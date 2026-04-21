@@ -12,6 +12,8 @@ from app.models.task import Task, TaskStatus
 from app.utils.helpers import ApiError
 from app.workloads.fio_workload import FioConfigError, FioConfigValidator
 from app.utils.logger import get_logger
+from app.utils.time import to_beijing_iso
+from app.utils.time import beijing_now, to_beijing_iso
 
 logger = get_logger(__name__)
 
@@ -41,7 +43,7 @@ class TaskService:
             logger.info(f"New device {data['device_ip']} created")
 
         task = Task(
-            name=data.get('name') or f"FIO-{data['device_ip']}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            name=data.get('name') or f"FIO-{data['device_ip']}-{beijing_now().strftime('%Y%m%d%H%M%S')}",
             device_id=device.id,
             device_ip=data['device_ip'],
             device_path=data['device_path'],
@@ -107,7 +109,7 @@ class TaskService:
             'status': task.status,
             'error': result.get('error'),
             'result': task.result,
-            'updated_at': task.updated_at.isoformat() if task.updated_at else None,
+            'updated_at': to_beijing_iso(task.updated_at, assume_utc=True),
         }
 
     @staticmethod

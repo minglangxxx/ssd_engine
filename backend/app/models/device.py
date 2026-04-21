@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from app.extensions import db
+from app.utils.time import to_beijing_iso
 
 
 class Device(db.Model):
@@ -26,8 +27,8 @@ class Device(db.Model):
             'agent_status': self.agent_status,
             'agent_version': self.agent_version or '',
             'agent_port': self.agent_port,
-            'last_heartbeat': self.last_heartbeat.isoformat() if self.last_heartbeat else None,
+            'last_heartbeat': to_beijing_iso(self.last_heartbeat, assume_utc=True),
             'disks': [],
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'created_at': to_beijing_iso(self.created_at, assume_utc=True),
+            'updated_at': to_beijing_iso(self.updated_at, assume_utc=True),
         }

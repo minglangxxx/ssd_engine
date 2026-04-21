@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from app.extensions import db
+from app.utils.time import to_beijing_iso
 
 
 class HostMonitorData(db.Model):
@@ -18,7 +19,7 @@ class HostMonitorData(db.Model):
             'device_ip': self.device_ip,
             'data_type': self.data_type,
             'data': self.data,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_at': to_beijing_iso(self.created_at),
         }
 
 
@@ -37,7 +38,7 @@ class DiskMonitorData(db.Model):
             'device_ip': self.device_ip,
             'disk_name': self.disk_name,
             'data': self.data,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_at': to_beijing_iso(self.created_at, assume_utc=True),
         }
 
 
@@ -75,8 +76,8 @@ class DiskMonitorSample(db.Model):
             'id': self.id,
             'device_ip': self.device_ip,
             'disk_name': self.disk_name,
-            'event_time': self.event_time.isoformat() if self.event_time else None,
-            'timestamp': self.event_time.isoformat() if self.event_time else None,
+            'event_time': to_beijing_iso(self.event_time),
+            'timestamp': to_beijing_iso(self.event_time),
             'task_id': self.task_id,
             'sample_interval_ms': self.sample_interval_ms,
             'disk_iops_read': self.disk_iops_read,
@@ -92,5 +93,5 @@ class DiskMonitorSample(db.Model):
             'disk_rrqm_per_sec': self.disk_rrqm_per_sec,
             'disk_wrqm_per_sec': self.disk_wrqm_per_sec,
             'source': self.source,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_at': to_beijing_iso(self.created_at, assume_utc=True),
         }

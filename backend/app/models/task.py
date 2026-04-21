@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from app.extensions import db
+from app.utils.time import to_beijing_iso
 
 
 class TaskStatus:
@@ -44,12 +45,12 @@ class Task(db.Model):
             'config': self.config,
             'fault_type': self.fault_type,
             'result': self.result,
-            'started_at': self.started_at.isoformat() if self.started_at else None,
-            'finished_at': self.finished_at.isoformat() if self.finished_at else None,
-            'data_window_start': self.data_window_start.isoformat() if self.data_window_start else None,
-            'data_window_end': self.data_window_end.isoformat() if self.data_window_end else None,
+            'started_at': to_beijing_iso(self.started_at),
+            'finished_at': to_beijing_iso(self.finished_at),
+            'data_window_start': to_beijing_iso(self.data_window_start),
+            'data_window_end': to_beijing_iso(self.data_window_end),
             'retention_policy': self.retention_policy,
-            'last_analysis_at': self.last_analysis_at.isoformat() if self.last_analysis_at else None,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'last_analysis_at': to_beijing_iso(self.last_analysis_at, assume_utc=True),
+            'created_at': to_beijing_iso(self.created_at, assume_utc=True),
+            'updated_at': to_beijing_iso(self.updated_at, assume_utc=True),
         }

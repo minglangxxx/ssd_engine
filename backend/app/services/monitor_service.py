@@ -6,6 +6,7 @@ from app.executors.agent_executor import AgentExecutor
 from app.models.device import Device
 from app.models.monitor_data import DiskMonitorSample, HostMonitorData
 from app.services.device_service import DeviceService
+from app.utils.time import to_beijing_iso
 
 
 class MonitorService:
@@ -72,7 +73,7 @@ class MonitorService:
         result = []
         for record in db_records:
             point = record.data.copy() if isinstance(record.data, dict) else {}
-            point['timestamp'] = record.created_at.isoformat() if record.created_at else None
+            point['timestamp'] = to_beijing_iso(record.created_at)
             result.append(MonitorService._flatten_host_point(point))
         return result
 

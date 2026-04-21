@@ -31,9 +31,8 @@ def analyze_task(task_id: int):
         payload = AiAnalysisRequest.model_validate(request.get_json(force=True)).model_dump()
     except ValidationError as error:
         raise ApiError('VALIDATION_ERROR', error.errors()[0]['msg'], 400) from error
-    service = AnalysisService()
-    result = service.analyze(task_id, **payload)
-    return success_response(result.to_dict())
+    result = AnalysisService.submit_analysis(task_id, **payload)
+    return success_response(result.to_dict(), 202)
 
 
 @api_bp.get('/tasks/<int:task_id>/ai-analysis')

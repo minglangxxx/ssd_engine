@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from app.extensions import db
+from app.utils.time import to_beijing_iso
 
 
 class FioTrendData(db.Model):
@@ -33,7 +34,7 @@ class FioTrendData(db.Model):
             'task_id': self.task_id,
             'device_ip': self.device_ip,
             'device_path': self.device_path,
-            'timestamp': self.timestamp.isoformat() if self.timestamp else None,
+            'timestamp': to_beijing_iso(self.timestamp),
             'sample_interval_ms': self.sample_interval_ms,
             'iops_read': self.iops_read,
             'iops_write': self.iops_write,
@@ -45,5 +46,5 @@ class FioTrendData(db.Model):
             'lat_p99': self.lat_p99,
             'lat_max': self.lat_max,
             'source': self.source,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_at': to_beijing_iso(self.created_at, assume_utc=True),
         }

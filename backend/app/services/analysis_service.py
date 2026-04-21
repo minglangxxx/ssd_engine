@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from datetime import datetime, timedelta
 from numbers import Number
 from pathlib import Path
 
+from flask import current_app
 from openai import OpenAI
 
 from app.config import Config
@@ -44,6 +46,69 @@ class AnalysisService:
         window_before_seconds: int = 30,
         window_after_seconds: int = 30,
     ) -> AiAnalysis:
+        task, execution_window, analysis = self._prepare_analysis(
+            task_id,
+            include_fio,
+            include_host_monitor,
+            include_disk_monitor,
+            window_before_seconds,
+            window_after_seconds,
+        )
+        return self._execute_analysis(
+            task,
+            analysis,
+            execution_window,
+            include_fio,
+            include_host_monitor,
+            include_disk_monitor,
+        )
+
+    @classmethod
+    def submit_analysis(
+        cls,
+        task_id: int,
+        include_fio: bool,
+        include_host_monitor: bool,
+        include_disk_monitor: bool,
+        window_before_seconds: int = 30,
+        window_after_seconds: int = 30,
+    ) -> AiAnalysis:
+        service = cls()
+        task, execution_window, analysis = service._prepare_analysis(
+            task_id,
+            include_fio,
+            include_host_monitor,
+            include_disk_monitor,
+            window_before_seconds,
+            window_after_seconds,
+        )
+
+        app = current_app._get_current_object()
+        worker = threading.Thread(
+            target=cls._run_analysis_in_background,
+            kwargs={
+                'app': app,
+                'analysis_id': analysis.id,
+                'task_id': task.id,
+                'execution_window': execution_window,
+                'include_fio': include_fio,
+                'include_host_monitor': include_host_monitor,
+                'include_disk_monitor': include_disk_monitor,
+            },
+            daemon=True,
+        )
+        worker.start()
+        return analysis
+
+    def _prepare_analysis(
+        self,
+        task_id: int,
+        include_fio: bool,
+        include_host_monitor: bool,
+        include_disk_monitor: bool,
+        window_before_seconds: int,
+        window_after_seconds: int,
+    ) -> tuple[Task, dict, AiAnalysis]:
         task = Task.query.get(task_id)
         if not task:
             raise ApiError('NOT_FOUND', '任务不存在', 404)
@@ -67,6 +132,46 @@ class AnalysisService:
         )
         db.session.add(analysis)
         db.session.commit()
+
+        return task, execution_window, analysis
+
+    @classmethod
+    def _run_analysis_in_background(
+        cls,
+        *,
+        app,
+        analysis_id: int,
+        task_id: int,
+        execution_window: dict,
+        include_fio: bool,
+        include_host_monitor: bool,
+        include_disk_monitor: bool,
+    ) -> None:
+        with app.app_context():
+            service = cls()
+            analysis = AiAnalysis.query.get(analysis_id)
+            task = Task.query.get(task_id)
+            if analysis is None or task is None:
+                return
+
+            service._execute_analysis(
+                task,
+                analysis,
+                execution_window,
+                include_fio,
+                include_host_monitor,
+                include_disk_monitor,
+            )
+
+    def _execute_analysis(
+        self,
+        task: Task,
+        analysis: AiAnalysis,
+        execution_window: dict,
+        include_fio: bool,
+        include_host_monitor: bool,
+        include_disk_monitor: bool,
+    ) -> AiAnalysis:
 
         try:
             context = self._build_context(

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from app.extensions import db
 from app.models.data_record import DataRecord, DataStatus
 from app.models.monitor_data import DiskMonitorSample
+from app.utils.time import beijing_now, to_beijing_iso
 from app.utils.logger import get_logger
 
 
@@ -79,7 +80,7 @@ class DataLifecycleService:
             try:
                 archive_path = os.path.join(
                     DATA_DIR,
-                    f"archive_{record.id}_{record.data_type}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+                    f"archive_{record.id}_{record.data_type}_{beijing_now().strftime('%Y%m%d_%H%M%S')}.json"
                 )
                 
                 # 从数据库读取对应的数据
@@ -118,9 +119,9 @@ class DataLifecycleService:
                         'record_id': record.id,
                         'data_type': record.data_type,
                         'device_ip': record.device_ip,
-                        'window_start': record.window_start.isoformat() if record.window_start else None,
-                        'window_end': record.window_end.isoformat() if record.window_end else None,
-                        'archived_at': datetime.utcnow().isoformat(),
+                        'window_start': to_beijing_iso(record.window_start),
+                        'window_end': to_beijing_iso(record.window_end),
+                        'archived_at': beijing_now().isoformat(),
                         'data_count': len(data_to_archive),
                         'data': data_to_archive
                     }, f, ensure_ascii=False, indent=2, default=str)
@@ -129,6 +130,7 @@ class DataLifecycleService:
                 record.status = DataStatus.ARCHIVED.value
                 record.file_path = archive_path
                 record.archived_at = datetime.utcnow()
+                record.archived_at = beijing_now().replace(tzinfo=None)
                 record.size_bytes = os.path.getsize(archive_path)
                 logger.info(f'Archived record {record.id} to {archive_path} ({record.size_bytes} bytes)')
                 
@@ -151,7 +153,7 @@ class DataLifecycleService:
     @staticmethod
     def build_download_archive(record_ids: list[int]) -> str:
         os.makedirs(DATA_DIR, exist_ok=True)
-        archive_path = os.path.join(DATA_DIR, f"download_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.tar.gz")
+        archive_path = os.path.join(DATA_DIR, f"download_{beijing_now().strftime('%Y%m%d_%H%M%S')}.tar.gz")
         records = DataRecord.query.filter(DataRecord.id.in_(record_ids)).all()
         with tarfile.open(archive_path, 'w:gz') as tar:
             for record in records:
@@ -212,7 +214,7 @@ class DataLifecycleService:
                     # 构建 Parquet 文件
                     parquet_path = os.path.join(
                         DATA_DIR,
-                        f"compressed_{record.id}_{record.data_type}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.parquet"
+                        f"compressed_{record.id}_{record.data_type}_{beijing_now().strftime('%Y%m%d_%H%M%S')}.parquet"
                     )
                     
                     # 转换为 PyArrow Table

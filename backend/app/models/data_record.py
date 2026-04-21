@@ -2,6 +2,7 @@ from datetime import datetime
 from enum import Enum
 
 from app.extensions import db
+from app.utils.time import to_beijing_iso
 
 
 class DataStatus(str, Enum):
@@ -47,8 +48,8 @@ class DataRecord(db.Model):
             'device_ip': self.device_ip,
             'disk_name': self.disk_name,
             'status': self.status,
-            'window_start': self.window_start.isoformat() if self.window_start else None,
-            'window_end': self.window_end.isoformat() if self.window_end else None,
+            'window_start': to_beijing_iso(self.window_start),
+            'window_end': to_beijing_iso(self.window_end),
             'record_count': self.record_count,
             'storage_backend': self.storage_backend,
             'storage_format': self.storage_format,
@@ -60,8 +61,8 @@ class DataRecord(db.Model):
             'file_path': self.file_path,
             'compressed_path': self.compressed_path,
             'size_bytes': self.size_bytes,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'archived_at': self.archived_at.isoformat() if self.archived_at else None,
-            'compressed_at': self.compressed_at.isoformat() if self.compressed_at else None,
-            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'created_at': to_beijing_iso(self.created_at, assume_utc=True),
+            'archived_at': to_beijing_iso(self.archived_at, assume_utc=True),
+            'compressed_at': to_beijing_iso(self.compressed_at, assume_utc=True),
+            'expires_at': to_beijing_iso(self.expires_at, assume_utc=True),
         }

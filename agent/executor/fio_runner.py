@@ -6,12 +6,14 @@ import subprocess
 import threading
 import time
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from logger import get_logger
 
 logger = get_logger(__name__)
+
+_CST = timezone(timedelta(hours=8))
 
 FIO_OPTION_MAP = {
     'mem': 'iomem',
@@ -255,7 +257,7 @@ class FioRunner:
             return None
 
         return {
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(_CST).isoformat(),
             'iops_read': read_iops,
             'iops_write': write_iops,
             'iops_total': read_iops + write_iops,

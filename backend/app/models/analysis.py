@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from app.extensions import db
+from app.utils.time import to_beijing_iso
 
 
 class AiAnalysis(db.Model):
@@ -27,10 +28,10 @@ class AiAnalysis(db.Model):
             'report': self.report,
             'summary': self.summary,
             'error': self.error,
-            'data_window_start': self.data_window_start.isoformat() if self.data_window_start else None,
-            'data_window_end': self.data_window_end.isoformat() if self.data_window_end else None,
+            'data_window_start': to_beijing_iso(self.data_window_start),
+            'data_window_end': to_beijing_iso(self.data_window_end),
             'input_manifest': self.input_manifest,
             'source_snapshot_version': self.source_snapshot_version,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'created_at': to_beijing_iso(self.created_at, assume_utc=True),
+            'completed_at': to_beijing_iso(self.completed_at, assume_utc=True),
         }
