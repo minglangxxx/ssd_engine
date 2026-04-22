@@ -1,113 +1,140 @@
-# Agent 模块说明
+# Agent
 
-Agent 是部署在被测设备上的轻量服务，负责执行 fio、采集主机/磁盘监控与 SMART 信息，并向 Backend 提供 HTTP 接口。
+Agent 是部署在被测机器上的轻量服务。它负责三件事：执行 fio、采集主机与磁盘指标、采集 NVMe SMART，并通过 HTTP 接口供 Backend 调用。
 
-## 1. 架构说明
-
-### 1.1 模块结构
+## 目录结构
 
 ```text
 agent/
-├── agent_server.py               服务入口与路由
-├── config.py                     环境变量与配置
-├── ingest_client.py              批量上报客户端
-├── collectors/                   采集层
-│   ├── cpu_collector.py
-│   ├── memory_collector.py
-│   ├── disk_collector.py
-│   ├── network_collector.py
-│   ├── system_collector.py
-│   └── smart_collector.py
-└── executor/
-    └── fio_runner.py             fio 任务执行与趋势采集
+├── agent_server.py      Flask 服务入口，包含全部 HTTP 路由
+├── config.py            从 .env 和环境变量加载配置
+├── ingest_client.py     向 Backend 内部 ingest API 批量上报数据
+├── logger.py            Agent 日志初始化
+├── collectors/          主机、磁盘、SMART 采集器
+├── executor/
+│   └── fio_runner.py    FIO 启动、停止、状态与趋势解析
+├── build.sh             Linux 下使用 PyInstaller 打包
+├── .env.example         Agent 环境变量示例
+└── requirements.txt
 ```
 
-### 1.2 运行架构
+## 运行模型
 
-- HTTP 接口层：对外提供健康检查、任务执行、监控查询
-- 任务执行层：`FioRunner` 负责任务生命周期与趋势解析
-- 监控采集层：各 Collector 每秒采样一次系统与磁盘指标
-- 缓冲与上报层：Ring Buffer 保存短期历史，`ingest_client` 批量推送 Backend
+### HTTP 服务
 
-## 2. 业务逻辑说明
+Agent 通过 Flask 提供接口，Backend 通过这些接口驱动任务与采集。
 
-### 2.1 fio 任务执行链路
+### 后台采集线程
 
-1. Backend 调用 `POST /fio/start`
-2. Agent 创建任务上下文并启动 fio 子进程
-3. 任务运行中持续解析趋势数据
-4. Backend 或用户调用 `POST /fio/stop/<task_id>` 停止任务
-5. 通过 `GET /fio/status/<task_id>` 与 `GET /fio/trend/<task_id>` 获取状态与趋势
+agent_server.py 启动时会拉起一个守护线程，每秒采集一次：
 
-### 2.2 监控采集链路
+- CPU
+- 内存
+- 网络
+- 系统概览
+- 磁盘运行态
 
-1. 后台线程每秒采集 CPU、内存、网络、系统、磁盘指标
-2. 数据写入内存 Ring Buffer（用于历史查询）
-3. 按配置批量上报至 Backend 持久化
+采样结果先写入内存中的 MonitorRingBuffer，用于历史查询；如果配置了 BACKEND_URL，则同时批量上报到 Backend。
 
-### 2.3 设计要点
+### SMART 周期采集
 
-- Agent 靠近设备，降低采集与执行延迟
-- 与平台通过 HTTP 解耦，便于横向扩展多节点
-- 采集与执行分线程运行，降低互相阻塞风险
+后台线程还会按 SMART_COLLECT_INTERVAL_SECONDS 周期扫描 NVMe 盘并采集 SMART 数据，再通过 ingest_client 推送给 Backend。
 
-## 3. API 说明
+### FIO 执行
 
-### 3.1 基础接口
+FioRunner 负责：
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/health` | 健康检查 |
-| POST | `/execute` | 执行通用命令（调试用途） |
+- 启动 fio 子进程
+- 维护任务状态
+- 解析趋势点
+- 停止任务
+- 向 Backend 周期上报趋势数据
 
-### 3.2 FIO 接口
+## HTTP API
+
+### 基础接口
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/fio/start` | 启动任务（`task_id`, `device`, `config`） |
-| GET | `/fio/status/<task_id>` | 查询任务状态 |
-| GET | `/fio/trend/<task_id>` | 查询任务趋势（支持 `start/end`） |
-| POST | `/fio/stop/<task_id>` | 停止任务 |
+| GET | /health | 健康检查，返回 status 和 version |
+| POST | /execute | 执行命令，主要用于调试或补充诊断 |
 
-### 3.3 监控接口
+### FIO 接口
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/monitor/host` | 主机实时快照 |
-| GET | `/monitor/host/history` | 主机历史指标 |
-| GET | `/monitor/disks` | 磁盘列表 |
-| GET | `/monitor/disk/<disk_name>` | 单盘实时指标 |
-| GET | `/monitor/disk/<disk_name>/history` | 单盘历史指标 |
+| POST | /fio/start | 启动任务，请求体包含 task_id、device、config |
+| GET | /fio/status/<task_id> | 查询任务状态和结果 |
+| GET | /fio/trend/<task_id> | 查询任务趋势，支持 start/end |
+| POST | /fio/stop/<task_id> | 停止任务 |
 
-### 3.4 SMART 接口
+### 监控接口
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/smart/<device>` | NVMe SMART 信息 |
+| GET | /monitor/host | 获取主机实时快照 |
+| GET | /monitor/host/history | 从 RingBuffer 获取主机历史 |
+| GET | /monitor/disks | 获取当前磁盘列表 |
+| GET | /monitor/disk/<disk_name> | 获取单盘实时数据 |
+| GET | /monitor/disk/<disk_name>/history | 获取单盘历史数据 |
 
-## 4. 配置与启动
+### SMART 接口
 
-### 4.1 依赖要求
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /smart/<path:device> | 读取指定设备路径的 SMART 信息 |
 
-- Python 3.10+
-- Linux 环境
-- fio（必需）
-- nvme-cli（建议）
+## 配置
 
-### 4.2 关键环境变量
+config.py 会先尝试读取 agent/.env，再回退到系统环境变量。
 
-- `AGENT_HOST`、`AGENT_PORT`
-- `BACKEND_URL`
-- `AGENT_DEVICE_IP`
-- `INGEST_TIMEOUT_SECONDS`
-- `FIO_INGEST_INTERVAL_SECONDS`
-- `DISK_INGEST_INTERVAL_SECONDS`
-- `INGEST_BATCH_SIZE`
+常用配置项如下：
 
-### 4.3 启动命令
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| AGENT_HOST | 0.0.0.0 | Agent 监听地址 |
+| AGENT_PORT | 8080 | Agent 监听端口 |
+| AGENT_VERSION | 0.1.0 | /health 返回的版本号 |
+| BACKEND_URL | 空 | Backend 地址，留空则不做数据上报 |
+| AGENT_DEVICE_IP | 空 | 上报到 Backend 时使用的设备 IP，应与 devices 表一致 |
+| INGEST_TIMEOUT_SECONDS | 5 | 上报请求超时 |
+| FIO_INGEST_INTERVAL_SECONDS | 3 | FIO 趋势上报周期 |
+| DISK_INGEST_INTERVAL_SECONDS | 3 | 磁盘监控上报周期 |
+| INGEST_BATCH_SIZE | 20 | 批量上报阈值 |
+| SMART_COLLECT_INTERVAL_SECONDS | 60 | SMART 采集周期 |
+| SMART_INGEST_INTERVAL_SECONDS | 60 | SMART 上报周期 |
+
+参考配置见 .env.example。
+
+## 启动方式
 
 ```bash
 cd agent
 pip install -r requirements.txt
 python agent_server.py
 ```
+
+默认启动地址为 0.0.0.0:8080。
+
+## 依赖说明
+
+- Python 3.10+
+- Flask
+- psutil
+- fio
+
+如果需要在 Linux 上打包单文件可执行程序，可使用：
+
+```bash
+cd agent
+chmod +x build.sh
+./build.sh
+```
+
+打包脚本会调用 PyInstaller 生成 dist/ssd-agent。
+
+## 与 Backend 的协作关系
+
+- Backend 通过设备表中的 agent_port 访问 Agent，不应假定所有 Agent 都是 8080。
+- Agent 的监控和趋势上报走 Backend 的 /api/internal/ingest/* 接口。
+- 如果 BACKEND_URL 未配置，Agent 仍可独立提供本地查询接口，但数据不会持久化到平台侧。
