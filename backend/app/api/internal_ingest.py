@@ -39,6 +39,17 @@ def ingest_host_monitor():
     return success_response(result, 201)
 
 
+@api_bp.post('/internal/ingest/nvme-smart')
+def ingest_nvme_smart():
+    """入库 NVMe SMART 数据"""
+    payload = request.get_json(force=True) or {}
+    result = IngestService.ingest_nvme_smart(
+        device_ip=str(payload.get('device_ip') or ''),
+        samples=payload.get('samples') or [],
+    )
+    return success_response(result, 201)
+
+
 @api_bp.post('/internal/ingest/flush-task')
 def flush_task():
     payload = request.get_json(force=True) or {}

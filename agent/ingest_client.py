@@ -32,6 +32,10 @@ class BackendIngestClient:
 
         self.host_metrics_batch: dict[str, Any] = {}
         self.host_metrics_last_flush = time.monotonic()
+
+        self.smart_flush_interval = max(1, Config.SMART_INGEST_INTERVAL_SECONDS)
+        self.smart_samples: list[dict[str, Any]] = []
+        self.smart_last_flush = time.monotonic()
         if self.enabled:
             logger.info('Backend ingest enabled, backend=%s, device_ip=%s', self.backend_url, self.device_ip)
             threading.Thread(target=self._flush_loop, daemon=True).start()
@@ -161,6 +165,48 @@ class BackendIngestClient:
                     del self.disk_samples[:len(samples)]
                     self.disk_last_flush = time.monotonic()
 
+    def enqueue_smart_metrics(self, timestamp: float, disk_name: str, smart_data: dict[str, Any]) -> None:
+        """将单次 SMART 采集数据入队"""
+        if not self.enabled or not smart_data:
+            return
+
+        sample = {
+            'disk_name': disk_name,
+            'event_time': self._to_iso_datetime(timestamp) or datetime.fromtimestamp(timestamp, tz=_CST).isoformat(),
+            **smart_data,
+        }
+
+        with self.lock:
+            self.smart_samples.append(sample)
+            should_flush = (
+                len(self.smart_samples) >= self.max_batch_size
+                or self._elapsed(self.smart_last_flush) >= self.smart_flush_interval
+            )
+
+        if should_flush:
+            self.flush_smart_metrics()
+
+    def flush_smart_metrics(self) -> None:
+        """将缓冲的 SMART 数据推送到后端"""
+        if not self.enabled:
+            return
+
+        with self.lock:
+            if not self.smart_samples:
+                return
+            samples = self.smart_samples[:]
+            self.smart_samples.clear()
+            self.smart_last_flush = time.monotonic()
+
+        payload = {
+            'device_ip': self.device_ip,
+            'samples': samples,
+        }
+        success = self._post_json('/api/internal/ingest/nvme-smart', payload)
+        if not success:
+            with self.lock:
+                self.smart_samples[:0] = samples
+
     def flush_task(
         self,
         task_id: str,
@@ -189,6 +235,7 @@ class BackendIngestClient:
             try:
                 self.flush_host_metrics()
                 self.flush_disk_metrics()
+                self.flush_smart_metrics()
                 task_ids = []
                 with self.lock:
                     for task_id, batch in self.fio_batches.items():

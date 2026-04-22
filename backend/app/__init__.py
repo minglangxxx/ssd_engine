@@ -5,7 +5,7 @@ from apscheduler.triggers.cron import CronTrigger
 from .api import api_bp, register_error_handlers
 from .config import Config
 from .extensions import db, migrate
-from .models import analysis, data_record, device, fio_trend, monitor_data, task
+from .models import analysis, data_record, device, fio_trend, monitor_data, nvme_smart, task
 from .utils.logger import setup_logging
 
 

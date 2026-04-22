@@ -156,6 +156,28 @@ CALL add_index_if_missing('data_records', 'idx_data_records_version', '(id, vers
 CALL add_index_if_missing('ai_analyses', 'idx_ai_analyses_task_created', '(task_id, created_at DESC)');
 CALL add_index_if_missing('disk_monitor_samples', 'idx_disk_monitor_device_ip', '(device_ip)');
 
+-- nvme_smart_data 表
+CREATE TABLE IF NOT EXISTS `nvme_smart_data` (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    device_ip VARCHAR(50) NOT NULL,
+    disk_name VARCHAR(64) NOT NULL,
+    event_time DATETIME(3) NOT NULL,
+    temperature SMALLINT NOT NULL DEFAULT 0,
+    percentage_used SMALLINT NOT NULL DEFAULT 0,
+    power_on_hours BIGINT NOT NULL DEFAULT 0,
+    power_cycles BIGINT NOT NULL DEFAULT 0,
+    media_errors BIGINT NOT NULL DEFAULT 0,
+    critical_warning SMALLINT NOT NULL DEFAULT 0,
+    data_units_read BIGINT NOT NULL DEFAULT 0,
+    data_units_written BIGINT NOT NULL DEFAULT 0,
+    available_spare SMALLINT NULL,
+    source VARCHAR(32) NOT NULL DEFAULT 'agent_smart',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_smart_device_disk_time (device_ip, disk_name, event_time),
+    INDEX idx_smart_event_time (event_time),
+    INDEX idx_smart_device_ip (device_ip)
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 DROP PROCEDURE IF EXISTS add_column_if_missing;
 DROP PROCEDURE IF EXISTS add_index_if_missing;
 DROP PROCEDURE IF EXISTS add_fk_if_missing;

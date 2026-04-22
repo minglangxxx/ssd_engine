@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import threading
 import time
+import re
 from collections import deque
 from datetime import datetime
 
@@ -93,12 +94,33 @@ fio_runner = FioRunner(ingest_client=ingest_client)
 buffer = MonitorRingBuffer()
 
 
+def _normalize_nvme_disk_name(disk_name: str) -> str | None:
+    name = (disk_name or '').strip()
+    if not name:
+        return None
+    match = re.match(r'^(nvme\d+n\d+)', name)
+    if match is None:
+        return None
+    return match.group(1)
+
+
+def _normalize_smart_device_path(device: str) -> str:
+    normalized = (device or '').strip().lstrip('/')
+    if normalized.startswith('dev/'):
+        return f'/{normalized}'
+    return f'/dev/{normalized}'
+
+
 def collect_background() -> None:
     logger.info("Starting background monitoring collection")
+    smart_last_collect = 0
+    smart_collect_interval = Config.SMART_COLLECT_INTERVAL_SECONDS
+
     while True:
         try:
+            now = time.time()
             snapshot = {
-                'timestamp': time.time(),
+                'timestamp': now,
                 'cpu': cpu_collector.collect(),
                 'memory': memory_collector.collect(),
                 'network': network_collector.collect(),
@@ -115,6 +137,26 @@ def collect_background() -> None:
             }
             ingest_client.enqueue_host_metrics(snapshot['timestamp'], host_metrics)
             ingest_client.enqueue_disk_metrics(snapshot['timestamp'], snapshot['disks'])
+
+            # SMART 周期采集（每 60 秒）
+            if now - smart_last_collect >= smart_collect_interval:
+                smart_last_collect = now
+                try:
+                    disks = disk_collector.list_disks()
+                    nvme_disks: set[str] = set()
+                    for disk in disks:
+                        disk_name = disk.get('name', '') if isinstance(disk, dict) else str(disk)
+                        normalized_name = _normalize_nvme_disk_name(disk_name)
+                        if normalized_name:
+                            nvme_disks.add(normalized_name)
+
+                    for disk_name in sorted(nvme_disks):
+                        smart_data = smart_collector.collect(f'/dev/{disk_name}')
+                        if smart_data:
+                            ingest_client.enqueue_smart_metrics(now, disk_name, smart_data)
+                except Exception as e:
+                    logger.error(f"Error collecting SMART data: {str(e)}")
+
             time.sleep(1)
         except Exception as e:
             logger.error(f"Error in background monitoring collection: {str(e)}")
@@ -246,9 +288,10 @@ def monitor_disk_history(disk_name: str):
 
 @app.get('/smart/<path:device>')
 def smart(device: str):
-    logger.info(f"SMART data endpoint called for device: {device}")
-    smart_data = smart_collector.collect(device)
-    logger.info(f"SMART data collected for device: {device}")
+    normalized_device = _normalize_smart_device_path(device)
+    logger.info(f"SMART data endpoint called for device: {normalized_device}")
+    smart_data = smart_collector.collect(normalized_device)
+    logger.info(f"SMART data collected for device: {normalized_device}")
     return jsonify(smart_data)
 
 

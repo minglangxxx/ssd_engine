@@ -32,6 +32,8 @@ const TimeRangeSelector: React.FC<TimeRangeSelectorProps> = ({
         <Radio.Button value="5m">5分钟</Radio.Button>
         <Radio.Button value="15m">15分钟</Radio.Button>
         <Radio.Button value="1h">1小时</Radio.Button>
+        <Radio.Button value="6h">6小时</Radio.Button>
+        <Radio.Button value="24h">24小时</Radio.Button>
         <Radio.Button value="all">全部</Radio.Button>
         <Radio.Button value="custom">自定义</Radio.Button>
       </Radio.Group>

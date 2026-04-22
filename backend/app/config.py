@@ -41,3 +41,6 @@ class Config:
 
     # 监控数据保留天数（超过后自动删除）
     MONITOR_RETENTION_DAYS = int(os.getenv('MONITOR_RETENTION_DAYS', '7'))
+
+    # NVMe SMART 数据保留天数
+    NVME_SMART_RETENTION_DAYS = int(os.getenv('NVME_SMART_RETENTION_DAYS', '90'))

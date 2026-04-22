@@ -34,8 +34,8 @@ const Sidebar: React.FC = () => {
   const location = useLocation();
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
 
-  const selectedKey = location.pathname;
-  const openKeys = selectedKey.startsWith('/monitor') ? ['monitor'] : [];
+  const selectedKey = location.pathname.startsWith('/devices/') ? '/devices' : location.pathname;
+  const openKeys = location.pathname.startsWith('/monitor') ? ['monitor'] : [];
 
   return (
     <Sider

@@ -9,6 +9,7 @@ import TaskDetail from '@/pages/TaskDetail/index';
 import MonitorHost from '@/pages/MonitorHost/index';
 import MonitorDisk from '@/pages/MonitorDisk/index';
 import DeviceManage from '@/pages/DeviceManage/index';
+import DeviceDetail from '@/pages/DeviceDetail/index';
 import DataManage from '@/pages/DataManage/index';
 
 const App: React.FC = () => {
@@ -23,6 +24,7 @@ const App: React.FC = () => {
             <Route path="/monitor/hosts" element={<MonitorHost />} />
             <Route path="/monitor/disks" element={<MonitorDisk />} />
             <Route path="/devices" element={<DeviceManage />} />
+            <Route path="/devices/:id" element={<DeviceDetail />} />
             <Route path="/data" element={<DataManage />} />
           </Route>
         </Routes>

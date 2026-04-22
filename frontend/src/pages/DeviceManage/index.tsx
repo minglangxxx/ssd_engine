@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Table,
   Button,
@@ -10,11 +10,10 @@ import {
   InputNumber,
   Popconfirm,
   message,
-  Descriptions,
-  Card,
 } from 'antd';
-import { PlusOutlined, ApiOutlined, ReloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { deviceApi } from '@/api/device';
 import { formatTime } from '@/utils/format';
 import type { Device } from '@/types/device';
@@ -22,9 +21,9 @@ import type { ColumnsType } from 'antd/es/table';
 
 const DeviceManage: React.FC = () => {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
-  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [form] = Form.useForm();
 
   const { data: devices, isLoading, isFetching, refetch } = useQuery({
@@ -32,14 +31,6 @@ const DeviceManage: React.FC = () => {
     queryFn: () => deviceApi.list(),
     refetchOnMount: 'always',
   });
-
-  useEffect(() => {
-    if (!selectedDevice || !devices) {
-      return;
-    }
-    const latestSelectedDevice = devices.find((item) => item.id === selectedDevice.id) || null;
-    setSelectedDevice(latestSelectedDevice);
-  }, [devices, selectedDevice]);
 
   const addMutation = useMutation({
     mutationFn: deviceApi.add,
@@ -68,18 +59,6 @@ const DeviceManage: React.FC = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['devices'] });
       message.success('删除成功');
-    },
-  });
-
-  const testMutation = useMutation({
-    mutationFn: deviceApi.testConnection,
-    onSuccess: async (result) => {
-      if (result.success) {
-        message.success('连接成功');
-        await refetch();
-      } else {
-        message.error(`连接失败: ${result.message}`);
-      }
     },
   });
 
@@ -126,7 +105,7 @@ const DeviceManage: React.FC = () => {
       width: 180,
       render: (_: unknown, record: Device) => (
         <Space>
-          <Button type="link" size="small" onClick={() => setSelectedDevice(record)}>
+          <Button type="link" size="small" onClick={() => navigate(`/devices/${record.id}`)}>
             详情
           </Button>
           <Button type="link" size="small" onClick={() => handleEdit(record)}>
@@ -170,49 +149,7 @@ const DeviceManage: React.FC = () => {
         rowKey="id"
         loading={isLoading}
         size="small"
-        onRow={(record) => ({
-          onClick: () => setSelectedDevice(record),
-          style: { cursor: 'pointer' },
-        })}
       />
-
-      {selectedDevice && (
-        <Card title={`设备详情 - ${selectedDevice.ip}`} size="small" style={{ marginTop: 16 }}>
-          <Descriptions column={3} size="small">
-            <Descriptions.Item label="节点IP">{selectedDevice.ip}</Descriptions.Item>
-            <Descriptions.Item label="名称">{selectedDevice.name}</Descriptions.Item>
-            <Descriptions.Item label="Agent端口">{selectedDevice.agent_port}</Descriptions.Item>
-            <Descriptions.Item label="磁盘列表">
-              {selectedDevice.disks?.join(', ') || '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="版本">{selectedDevice.agent_version}</Descriptions.Item>
-              <Descriptions.Item label="最后心跳">{selectedDevice.last_heartbeat ? formatTime(selectedDevice.last_heartbeat) : '-'}</Descriptions.Item>
-            <Descriptions.Item label="状态">
-              <Tag color={selectedDevice.agent_status === 'online' ? 'green' : 'red'}>
-                {selectedDevice.agent_status}
-              </Tag>
-            </Descriptions.Item>
-          </Descriptions>
-          <Space style={{ marginTop: 12 }}>
-            <Button icon={<ReloadOutlined />} loading={isFetching && !isLoading} onClick={handleRefreshStatus}>
-              刷新状态
-            </Button>
-            <Button
-              icon={<ApiOutlined />}
-              loading={testMutation.isPending}
-              onClick={() =>
-                testMutation.mutate({
-                  ip: selectedDevice.ip,
-                  user: 'root',
-                  password: '',
-                })
-              }
-            >
-              测试连接
-            </Button>
-          </Space>
-        </Card>
-      )}
 
       <Modal
         title={editingDevice ? '编辑设备' : '添加设备'}

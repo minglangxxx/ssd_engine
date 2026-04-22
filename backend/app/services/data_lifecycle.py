@@ -336,6 +336,7 @@ class DataLifecycleService:
         from app.models.fio_trend import FioTrendData
         from app.models.monitor_data import HostMonitorData
         from app.models.analysis import AiAnalysis
+        from app.models.nvme_smart import NvmeSmartData
         
         logger = get_logger(__name__)
         cutoff = datetime.now() - timedelta(days=retention_days)
@@ -345,6 +346,7 @@ class DataLifecycleService:
             'disk_monitor_samples': 0,
             'fio_trend_data': 0,
             'host_monitor_data': 0,
+            'nvme_smart_data': 0,
             'ai_analyses': 0,
             'orphaned_data_records': 0,
             'total': 0,
@@ -387,7 +389,16 @@ class DataLifecycleService:
             cleanup_result['ai_analyses'] = deleted_analysis
             logger.info('Deleted %d AI analysis records', deleted_analysis)
 
-            # 5. 清理已标记为 expired 的 DataRecord 元数据
+            # 5. 清理 NVMe SMART 数据
+            logger.info('Cleaning NvmeSmartData older than %s', cutoff)
+            deleted_smart = NvmeSmartData.query.filter(
+                NvmeSmartData.event_time < cutoff
+            ).delete(synchronize_session=False)
+            db.session.commit()
+            cleanup_result['nvme_smart_data'] = deleted_smart
+            logger.info('Deleted %d NVMe SMART records', deleted_smart)
+
+            # 6. 清理已标记为 expired 的 DataRecord 元数据
             logger.info('Cleaning expired DataRecords')
             deleted_records = DataRecord.query.filter(
                 DataRecord.expires_at is not None,
@@ -401,16 +412,18 @@ class DataLifecycleService:
                 cleanup_result['disk_monitor_samples'],
                 cleanup_result['fio_trend_data'],
                 cleanup_result['host_monitor_data'],
+                cleanup_result['nvme_smart_data'],
                 cleanup_result['ai_analyses'],
                 cleanup_result['orphaned_data_records'],
             ])
 
             logger.info(
-                'auto_cleanup completed: total=%d items (disk=%d, fio=%d, host=%d, analysis=%d, records=%d)',
+                'auto_cleanup completed: total=%d items (disk=%d, fio=%d, host=%d, smart=%d, analysis=%d, records=%d)',
                 cleanup_result['total'],
                 cleanup_result['disk_monitor_samples'],
                 cleanup_result['fio_trend_data'],
                 cleanup_result['host_monitor_data'],
+                cleanup_result['nvme_smart_data'],
                 cleanup_result['ai_analyses'],
                 cleanup_result['orphaned_data_records'],
             )

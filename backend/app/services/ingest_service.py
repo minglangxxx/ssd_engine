@@ -9,10 +9,14 @@ from app.models.data_record import DataRecord, DataStatus
 from app.models.device import Device
 from app.models.fio_trend import FioTrendData
 from app.models.monitor_data import DiskMonitorSample, HostMonitorData
+from app.models.nvme_smart import NvmeSmartData
 from app.models.task import Task
 from app.utils.helpers import ApiError
+from app.utils.logger import get_logger
 
 _MYSQL_BIGINT_MAX = 9223372036854775807
+
+logger = get_logger(__name__)
 
 
 class IngestService:
@@ -207,6 +211,107 @@ class IngestService:
         }
 
     @staticmethod
+    def ingest_nvme_smart(device_ip: str, samples: list[dict]) -> dict:
+        """入库 NVMe SMART 数据"""
+        device = Device.query.filter_by(ip=device_ip).first()
+        if device is None:
+            raise ApiError('NOT_FOUND', '设备不存在', 404)
+
+        inserted_count = 0
+        grouped_windows: dict[tuple[str, str], dict] = {}
+
+        for sample in samples:
+            disk_name = str(sample.get('disk_name') or '').strip()
+            event_time = IngestService._parse_timestamp(sample.get('event_time'))
+            if not disk_name or event_time is None:
+                continue
+
+            normalized_sample = IngestService._normalize_nvme_smart_sample(sample)
+            if normalized_sample is None:
+                logger.warning('Skipping invalid NVMe SMART sample for device %s disk %s: %s', device_ip, disk_name, sample)
+                continue
+
+            db.session.add(NvmeSmartData(
+                device_ip=device_ip,
+                disk_name=disk_name,
+                event_time=event_time,
+                temperature=normalized_sample['temperature'],
+                percentage_used=normalized_sample['percentage_used'],
+                power_on_hours=normalized_sample['power_on_hours'],
+                power_cycles=normalized_sample['power_cycles'],
+                media_errors=normalized_sample['media_errors'],
+                critical_warning=normalized_sample['critical_warning'],
+                data_units_read=normalized_sample['data_units_read'],
+                data_units_written=normalized_sample['data_units_written'],
+                available_spare=normalized_sample['available_spare'],
+                source=str(sample.get('source') or 'agent_smart'),
+            ))
+            inserted_count += 1
+
+            day_key = event_time.strftime('%Y%m%d')
+            group_key = (disk_name, day_key)
+            window = grouped_windows.setdefault(group_key, {
+                'start': event_time,
+                'end': event_time,
+                'count': 0,
+            })
+            window['start'] = min(window['start'], event_time)
+            window['end'] = max(window['end'], event_time)
+            window['count'] += 1
+
+        for (disk_name, _day_key), window in grouped_windows.items():
+            record = IngestService._get_or_create_record(
+                data_type='nvme_smart',
+                device_ip=device_ip,
+                task_id=None,
+                query_scope='device_disk_day',
+                disk_name=disk_name,
+            )
+            IngestService._update_record_window(record, window['start'], window['end'], window['count'])
+            record.hot_table_name = 'nvme_smart_data'
+            record.storage_backend = 'mysql'
+            record.storage_format = 'table'
+            checksum = IngestService._compute_checksum(samples)
+            record.checksum = checksum
+
+        db.session.commit()
+        return {
+            'inserted': inserted_count,
+            'device_ip': device_ip,
+        }
+
+    @staticmethod
+    def _normalize_nvme_smart_sample(sample: dict) -> dict | None:
+        try:
+            available_spare_raw = sample.get('available_spare')
+            available_spare = None
+            if available_spare_raw is not None and available_spare_raw != '':
+                available_spare = IngestService._coerce_bounded_int('available_spare', available_spare_raw, minimum=0, maximum=100)
+
+            return {
+                'temperature': IngestService._coerce_bounded_int('temperature', sample.get('temperature', 0), minimum=0, maximum=200),
+                'percentage_used': IngestService._coerce_bounded_int('percentage_used', sample.get('percentage_used', 0), minimum=0, maximum=100),
+                'power_on_hours': IngestService._coerce_bounded_int('power_on_hours', sample.get('power_on_hours', 0), minimum=0, maximum=_MYSQL_BIGINT_MAX),
+                'power_cycles': IngestService._coerce_bounded_int('power_cycles', sample.get('power_cycles', 0), minimum=0, maximum=_MYSQL_BIGINT_MAX),
+                'media_errors': IngestService._coerce_bounded_int('media_errors', sample.get('media_errors', 0), minimum=0, maximum=_MYSQL_BIGINT_MAX),
+                'critical_warning': IngestService._coerce_bounded_int('critical_warning', sample.get('critical_warning', 0), minimum=0, maximum=32767),
+                'data_units_read': IngestService._coerce_bounded_int('data_units_read', sample.get('data_units_read', 0), minimum=0, maximum=_MYSQL_BIGINT_MAX),
+                'data_units_written': IngestService._coerce_bounded_int('data_units_written', sample.get('data_units_written', 0), minimum=0, maximum=_MYSQL_BIGINT_MAX),
+                'available_spare': available_spare,
+            }
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _coerce_bounded_int(field: str, value, minimum: int | None = None, maximum: int | None = None) -> int:
+        parsed = int(value or 0)
+        if minimum is not None and parsed < minimum:
+            raise ValueError(f'{field} below minimum: {parsed}')
+        if maximum is not None and parsed > maximum:
+            raise ValueError(f'{field} above maximum: {parsed}')
+        return parsed
+
+    @staticmethod
     def flush_task(task_id: int, payload: dict) -> dict:
         task = Task.query.get(task_id)
         if task is None:
@@ -263,6 +368,7 @@ class IngestService:
             hot_table_name=(
                 'fio_trend_data' if data_type == 'fio_trend'
                 else 'host_monitor_data' if data_type == 'host_monitor'
+                else 'nvme_smart_data' if data_type == 'nvme_smart'
                 else 'disk_monitor_samples'
             ),
             query_scope=query_scope,

@@ -33,5 +33,5 @@ def register_error_handlers(app):
         return error_response('INTERNAL_ERROR', '服务器内部错误', 500)
 
 
-from . import analysis, data, device, internal_ingest, monitor, task  # noqa: E402,F401
+from . import analysis, data, device, internal_ingest, monitor, nvme, task  # noqa: E402,F401
 

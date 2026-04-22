@@ -51,3 +51,7 @@ export function formatUptime(seconds: number): string {
   if (days > 0) return `${days}天`;
   return formatDuration(seconds);
 }
+
+export function formatDataUnits(units: number): string {
+  return formatBytes(units * 512);
+}
