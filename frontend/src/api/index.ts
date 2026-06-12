@@ -4,3 +4,4 @@ export { monitorApi } from './monitor';
 export { analysisApi } from './analysis';
 export { dataApi } from './data';
 export { smartApi } from './smart';
+export { nvmeApi } from './nvme';

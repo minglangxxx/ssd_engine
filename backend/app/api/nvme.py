@@ -32,3 +32,27 @@ def get_health_score(device_id: int):
 def get_smart_alerts(device_id: int):
     result = NvmeService.get_alerts(device_id)
     return success_response(result)
+
+
+@api_bp.get('/devices/<int:device_id>/nvme/list')
+def get_nvme_list(device_id: int):
+    result = NvmeService.get_nvme_list(device_id)
+    return success_response(result)
+
+
+@api_bp.get('/devices/<int:device_id>/nvme/<disk_name>/id-ctrl')
+def get_nvme_id_ctrl(device_id: int, disk_name: str):
+    result = NvmeService.get_nvme_id_ctrl(device_id, disk_name)
+    return success_response(result)
+
+
+@api_bp.get('/devices/<int:device_id>/nvme/<disk_name>/id-ns')
+def get_nvme_id_ns(device_id: int, disk_name: str):
+    result = NvmeService.get_nvme_id_ns(device_id, disk_name)
+    return success_response(result)
+
+
+@api_bp.get('/devices/<int:device_id>/nvme/<disk_name>/error-log')
+def get_nvme_error_log(device_id: int, disk_name: str):
+    result = NvmeService.get_nvme_error_log(device_id, disk_name)
+    return success_response(result)

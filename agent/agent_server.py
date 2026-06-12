@@ -15,6 +15,7 @@ from collectors.cpu_collector import CpuCollector
 from collectors.disk_collector import DiskCollector
 from collectors.memory_collector import MemoryCollector
 from collectors.network_collector import NetworkCollector
+from collectors.nvme_collector import NvmeCollector
 from collectors.smart_collector import SmartCollector
 from collectors.system_collector import SystemCollector
 from config import Config
@@ -89,6 +90,7 @@ disk_collector = DiskCollector()
 network_collector = NetworkCollector()
 system_collector = SystemCollector()
 smart_collector = SmartCollector()
+nvme_collector = NvmeCollector()
 ingest_client = BackendIngestClient()
 fio_runner = FioRunner(ingest_client=ingest_client)
 buffer = MonitorRingBuffer()
@@ -284,6 +286,36 @@ def monitor_disk_history(disk_name: str):
     history_data = buffer.query_disk(disk_name, start, end)
     logger.debug(f"Returning {len(history_data)} history records for disk {disk_name}")
     return jsonify({'data': history_data})
+
+
+@app.get('/nvme/<path:device>/id-ctrl')
+def nvme_id_ctrl(device: str):
+    normalized_device = _normalize_smart_device_path(device)
+    logger.info(f'NVMe id-ctrl endpoint called for device: {normalized_device}')
+    data = nvme_collector.id_ctrl(normalized_device)
+    if not data:
+        return jsonify({'error': f'nvme id-ctrl failed for {normalized_device}'}), 502
+    return jsonify(data)
+
+
+@app.get('/nvme/<path:device>/id-ns')
+def nvme_id_ns(device: str):
+    normalized_device = _normalize_smart_device_path(device)
+    logger.info(f'NVMe id-ns endpoint called for device: {normalized_device}')
+    data = nvme_collector.id_ns(normalized_device)
+    if not data:
+        return jsonify({'error': f'nvme id-ns failed for {normalized_device}'}), 502
+    return jsonify(data)
+
+
+@app.get('/nvme/<path:device>/error-log')
+def nvme_error_log(device: str):
+    normalized_device = _normalize_smart_device_path(device)
+    logger.info(f'NVMe error-log endpoint called for device: {normalized_device}')
+    data = nvme_collector.error_log(normalized_device)
+    if not data:
+        return jsonify({'error': f'nvme error-log failed for {normalized_device}'}), 502
+    return jsonify(data)
 
 
 @app.get('/smart/<path:device>')

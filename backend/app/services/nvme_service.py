@@ -364,3 +364,147 @@ class NvmeService:
             return dt
         except ValueError:
             return None
+
+    @staticmethod
+    def get_nvme_list(device_id: int) -> dict:
+        device = Device.query.get(device_id)
+        if device is None:
+            raise ApiError('NOT_FOUND', '设备不存在', 404)
+
+        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
+        try:
+            if not agent.test_connection():
+                raise ApiError('AGENT_OFFLINE', 'Agent 离线', 502)
+
+            disks_raw = agent.get_disk_list()
+            nvme_disks: list[dict] = []
+            seen: set[str] = set()
+
+            for disk in disks_raw:
+                raw_name = disk.get('name', '') if isinstance(disk, dict) else str(disk)
+                disk_name = _normalize_nvme_disk_name(raw_name)
+                if disk_name is None or disk_name in seen:
+                    continue
+                seen.add(disk_name)
+
+                ctrl_match = re.match(r'^(nvme\d+)', disk_name)
+                controller = ctrl_match.group(1) if ctrl_match else disk_name
+
+                try:
+                    id_ctrl = agent.get_nvme_id_ctrl(f'/dev/{controller}')
+                except Exception:
+                    id_ctrl = {}
+
+                capacity_bytes = 0
+                tnvmcap = id_ctrl.get('tnvmcap')
+                if tnvmcap and int(tnvmcap) > 0:
+                    capacity_bytes = int(tnvmcap)
+                else:
+                    try:
+                        id_ns = agent.get_nvme_id_ns(f'/dev/{disk_name}')
+                        nsze = int(id_ns.get('nsze', 0))
+                        lbaf_list = id_ns.get('lbaf', [])
+                        flbas = int(id_ns.get('flbas', 0))
+                        if lbaf_list and flbas < len(lbaf_list):
+                            ds = int(lbaf_list[flbas].get('ds', 9))
+                            sector_size = 1 << ds
+                        else:
+                            sector_size = 512
+                        capacity_bytes = nsze * sector_size
+                    except Exception:
+                        pass
+
+                nvme_disks.append({
+                    'disk_name': disk_name,
+                    'controller': controller,
+                    'model': (id_ctrl.get('mn') or '').strip(),
+                    'serial_number': (id_ctrl.get('sn') or '').strip(),
+                    'firmware_version': (id_ctrl.get('fr') or '').strip(),
+                    'capacity_bytes': capacity_bytes,
+                    'capacity_formatted': NvmeService._format_capacity(capacity_bytes),
+                    'pci_vendor_id': int(id_ctrl.get('vid', 0) or 0),
+                    'nvme_version': (id_ctrl.get('nvme_version') or '').strip(),
+                    'state': '',
+                })
+
+            return {
+                'device_id': device.id,
+                'device_ip': device.ip,
+                'disks': nvme_disks,
+            }
+        finally:
+            agent.close()
+
+    @staticmethod
+    def get_nvme_id_ctrl(device_id: int, disk_name: str) -> dict:
+        device = Device.query.get(device_id)
+        if device is None:
+            raise ApiError('NOT_FOUND', '设备不存在', 404)
+
+        ctrl_match = re.match(r'^(nvme\d+)', disk_name)
+        controller = ctrl_match.group(1) if ctrl_match else disk_name
+
+        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
+        try:
+            data = agent.get_nvme_id_ctrl(f'/dev/{controller}')
+            if not data:
+                raise ApiError('NVME_CMD_FAILED', f'nvme id-ctrl 执行失败: {disk_name}', 502)
+            return {
+                'device_id': device.id,
+                'disk_name': disk_name,
+                'data': data,
+            }
+        finally:
+            agent.close()
+
+    @staticmethod
+    def get_nvme_id_ns(device_id: int, disk_name: str) -> dict:
+        device = Device.query.get(device_id)
+        if device is None:
+            raise ApiError('NOT_FOUND', '设备不存在', 404)
+
+        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
+        try:
+            data = agent.get_nvme_id_ns(f'/dev/{disk_name}')
+            if not data:
+                raise ApiError('NVME_CMD_FAILED', f'nvme id-ns 执行失败: {disk_name}', 502)
+            return {
+                'device_id': device.id,
+                'disk_name': disk_name,
+                'data': data,
+            }
+        finally:
+            agent.close()
+
+    @staticmethod
+    def get_nvme_error_log(device_id: int, disk_name: str) -> dict:
+        device = Device.query.get(device_id)
+        if device is None:
+            raise ApiError('NOT_FOUND', '设备不存在', 404)
+
+        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
+        try:
+            data = agent.get_nvme_error_log(f'/dev/{disk_name}')
+            if not data:
+                raise ApiError('NVME_CMD_FAILED', f'nvme error-log 执行失败: {disk_name}', 502)
+            return {
+                'device_id': device.id,
+                'disk_name': disk_name,
+                'data': data,
+            }
+        finally:
+            agent.close()
+
+    @staticmethod
+    def _format_capacity(bytes_val: int) -> str:
+        if bytes_val <= 0:
+            return '0 B'
+        units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+        idx = 0
+        val = float(bytes_val)
+        while val >= 1024 and idx < len(units) - 1:
+            val /= 1024
+            idx += 1
+        if idx <= 1:
+            return f'{int(val)} {units[idx]}'
+        return f'{val:.2f} {units[idx]}'

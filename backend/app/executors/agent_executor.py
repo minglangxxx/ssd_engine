@@ -98,6 +98,21 @@ class AgentExecutor(Executor):
         response.raise_for_status()
         return response.json()
 
+    def get_nvme_id_ctrl(self, device: str) -> dict[str, Any]:
+        response = self.session.get(f'{self.agent_url}/nvme/{device}/id-ctrl', timeout=15)
+        response.raise_for_status()
+        return response.json()
+
+    def get_nvme_id_ns(self, device: str) -> dict[str, Any]:
+        response = self.session.get(f'{self.agent_url}/nvme/{device}/id-ns', timeout=15)
+        response.raise_for_status()
+        return response.json()
+
+    def get_nvme_error_log(self, device: str) -> dict[str, Any]:
+        response = self.session.get(f'{self.agent_url}/nvme/{device}/error-log', timeout=15)
+        response.raise_for_status()
+        return response.json()
+
     def fio_trend(self, task_id: str, start: str | None = None, end: str | None = None) -> list[dict[str, Any]]:
         params = {}
         if start:
