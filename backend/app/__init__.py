@@ -1,11 +1,13 @@
 from flask import Flask
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from .api import api_bp, register_error_handlers
 from .config import Config
 from .extensions import db, migrate
 from .models import analysis, data_record, device, fio_trend, monitor_data, nvme_smart, task
+from .services.device_status_checker import check_all_agents, CHECK_INTERVAL_SECONDS
 from .utils.logger import setup_logging
 
 
@@ -64,8 +66,15 @@ def _start_scheduler(app: Flask) -> None:
         id='monitor_cleanup',
         replace_existing=True,
     )
+    scheduler.add_job(
+        check_all_agents,
+        trigger=IntervalTrigger(seconds=CHECK_INTERVAL_SECONDS),
+        id='agent_status_check',
+        replace_existing=True,
+    )
     scheduler.start()
     logger.info(
-        'Scheduler started: monitor data auto-cleanup at 02:00 CST, retention=%d days',
+        'Scheduler started: monitor data auto-cleanup at 02:00 CST, retention=%d days, agent status check every %ds',
         retention_days,
+        CHECK_INTERVAL_SECONDS,
     )

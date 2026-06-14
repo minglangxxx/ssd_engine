@@ -30,6 +30,8 @@ class Config:
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
         'pool_recycle': 1800,
+        'pool_size': 10,
+        'max_overflow': 20,
     }
 
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
