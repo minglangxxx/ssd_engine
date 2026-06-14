@@ -20,16 +20,35 @@ def check_all_agents():
         devices = Device.query.all()
         if not devices:
             return
-        _check_devices_concurrently(devices)
+
+        # 提取设备信息后立即释放 DB 连接
+        device_info = [(d.id, d.ip, d.agent_port) for d in devices]
+        db.session.commit()
+
+        # 并发 HTTP 检测（不占用 DB 连接）
+        results = _check_devices_concurrently(device_info)
+
+        # 重新获取 DB 连接更新结果
+        for device_id, result in results.items():
+            device = Device.query.get(device_id)
+            if device is None:
+                continue
+            device.agent_status = result['status']
+            device.agent_version = result['version']
+            if result['status'] == 'online':
+                device.last_heartbeat = datetime.utcnow()
+
+        db.session.commit()
+        logger.info("Agent status check completed: %d devices updated", len(results))
 
 
-def _check_devices_concurrently(devices: list[Device]) -> None:
+def _check_devices_concurrently(device_info: list[tuple]) -> dict[int, dict]:
     results: dict[int, dict] = {}
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {
-            executor.submit(_check_single_device, d.ip, d.agent_port): d.id
-            for d in devices
+            executor.submit(_check_single_device, ip, port): device_id
+            for device_id, ip, port in device_info
         }
         for future in as_completed(futures):
             device_id = futures[future]
@@ -39,17 +58,7 @@ def _check_devices_concurrently(devices: list[Device]) -> None:
                 logger.warning("Check failed for device %s: %s", device_id, error)
                 results[device_id] = {'status': 'offline', 'version': ''}
 
-    for device_id, result in results.items():
-        device = Device.query.get(device_id)
-        if device is None:
-            continue
-        device.agent_status = result['status']
-        device.agent_version = result['version']
-        if result['status'] == 'online':
-            device.last_heartbeat = datetime.utcnow()
-
-    db.session.commit()
-    logger.info("Agent status check completed: %d devices updated", len(results))
+    return results
 
 
 def _check_single_device(ip: str, agent_port: int) -> dict:

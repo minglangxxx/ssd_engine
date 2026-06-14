@@ -82,8 +82,6 @@ class TaskService:
             per_page=page_size,
             error_out=False,
         )
-        for item in pagination.items:
-            TaskService.refresh_runtime_state(item)
         logger.info(f"Returning {len(pagination.items)} tasks out of total {pagination.total}")
         return {
             'items': [item.to_dict() for item in pagination.items],

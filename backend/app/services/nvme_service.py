@@ -310,11 +310,16 @@ class NvmeService:
     @staticmethod
     def _fetch_smart_from_agent(device: Device) -> list[NvmeSmartData]:
         """从 Agent 实时获取 SMART 数据，构造 NvmeSmartData 对象（不入库）"""
-        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
+        device_ip = device.ip
+        agent_port = device.agent_port
+
+        # 先释放 DB 连接，再做 HTTP 调用
+        db.session.commit()
+
+        agent = AgentExecutor(f'http://{device_ip}:{agent_port}')
         try:
             if not agent.test_connection():
                 return []
-            # 获取磁盘列表
             disks = agent.get_disk_list()
             records = []
             now = datetime.utcnow()
@@ -330,7 +335,7 @@ class NvmeService:
                     if not smart_raw:
                         continue
                     record = NvmeSmartData(
-                        device_ip=device.ip,
+                        device_ip=device_ip,
                         disk_name=disk_name,
                         event_time=now,
                         temperature=int(smart_raw.get('temperature', 0) or 0),
@@ -346,7 +351,7 @@ class NvmeService:
                     )
                     records.append(record)
                 except Exception as e:
-                    logger.warning('Failed to get SMART for %s from agent %s: %s', disk_name, device.ip, e)
+                    logger.warning('Failed to get SMART for %s from agent %s: %s', disk_name, device_ip, e)
             return records
         finally:
             agent.close()
@@ -371,7 +376,13 @@ class NvmeService:
         if device is None:
             raise ApiError('NOT_FOUND', '设备不存在', 404)
 
-        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
+        device_ip = device.ip
+        agent_port = device.agent_port
+
+        # 先释放 DB 连接，再做 HTTP 调用
+        db.session.commit()
+
+        agent = AgentExecutor(f'http://{device_ip}:{agent_port}')
         try:
             if not agent.test_connection():
                 raise ApiError('AGENT_OFFLINE', 'Agent 离线', 502)
@@ -428,8 +439,8 @@ class NvmeService:
                 })
 
             return {
-                'device_id': device.id,
-                'device_ip': device.ip,
+                'device_id': device_id,
+                'device_ip': device_ip,
                 'disks': nvme_disks,
             }
         finally:
