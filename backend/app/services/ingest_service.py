@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.extensions import db
 from app.models.data_record import DataRecord, DataStatus
@@ -15,6 +15,13 @@ from app.utils.helpers import ApiError
 from app.utils.logger import get_logger
 
 _MYSQL_BIGINT_MAX = 9223372036854775807
+
+_ROW_SIZE_ESTIMATE = {
+    'fio_trend': 200,
+    'disk_monitor': 300,
+    'host_monitor': 500,
+    'nvme_smart': 150,
+}
 
 logger = get_logger(__name__)
 
@@ -357,6 +364,12 @@ class IngestService:
         if record is not None:
             return record
 
+        from app.config import Config
+        if data_type == 'nvme_smart':
+            retention_days = int(Config.NVME_SMART_RETENTION_DAYS or 90)
+        else:
+            retention_days = int(Config.MONITOR_RETENTION_DAYS or 7)
+
         record = DataRecord(
             task_id=task_id,
             data_type=data_type,
@@ -373,6 +386,7 @@ class IngestService:
             ),
             query_scope=query_scope,
             record_count=0,
+            expires_at=datetime.utcnow() + timedelta(days=retention_days),
         )
         db.session.add(record)
         return record
@@ -388,6 +402,7 @@ class IngestService:
         from sqlalchemy import update, and_
 
         delta = max(0, int(record_count_delta or 0))
+        row_estimate = _ROW_SIZE_ESTIMATE.get(record.data_type, 200)
 
         # 新对象尚未入库时直接在内存更新，交由同一事务统一 INSERT。
         if record.id is None:
@@ -396,6 +411,7 @@ class IngestService:
             if window_end is not None:
                 record.window_end = window_end if record.window_end is None else max(record.window_end, window_end)
             record.record_count = min(_MYSQL_BIGINT_MAX, int(record.record_count or 0) + delta)
+            record.size_bytes = min(_MYSQL_BIGINT_MAX, int(record.record_count or 0) * row_estimate)
             return
 
         # 有界重试，避免无限递归。
@@ -412,6 +428,7 @@ class IngestService:
                 next_window_end = window_end if next_window_end is None else max(next_window_end, window_end)
 
             next_record_count = min(_MYSQL_BIGINT_MAX, int(current.record_count or 0) + delta)
+            next_size_bytes = min(_MYSQL_BIGINT_MAX, next_record_count * row_estimate)
 
             stmt = (
                 update(DataRecord)
@@ -420,6 +437,7 @@ class IngestService:
                     window_start=next_window_start,
                     window_end=next_window_end,
                     record_count=next_record_count,
+                    size_bytes=next_size_bytes,
                     version=DataRecord.version + 1,
                     updated_at=datetime.utcnow(),
                 )
@@ -429,6 +447,7 @@ class IngestService:
                 record.window_start = next_window_start
                 record.window_end = next_window_end
                 record.record_count = next_record_count
+                record.size_bytes = next_size_bytes
                 record.version = int(current.version or 0) + 1
                 return
 

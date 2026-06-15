@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Table,
   Button,
@@ -9,7 +9,6 @@ import {
   Col,
   Statistic,
   Select,
-  DatePicker,
   Radio,
   Popconfirm,
   message,
@@ -27,8 +26,6 @@ import { formatTime, formatBytes } from '@/utils/format';
 import { DATA_STATUS_MAP, DATA_TYPE_MAP } from '@/utils/constants';
 import type { DataRecord, DataStatus, DataType } from '@/types/data';
 import type { ColumnsType } from 'antd/es/table';
-
-const { RangePicker } = DatePicker;
 
 const DataManage: React.FC = () => {
   const qc = useQueryClient();
@@ -50,11 +47,24 @@ const DataManage: React.FC = () => {
     queryFn: () => dataApi.getOverview(),
   });
 
+  // 当前页已选记录的状态集合
+  const selectedStatuses = useMemo(() => {
+    if (!data?.items) return new Set<DataStatus>();
+    const statuses = new Set<DataStatus>();
+    for (const id of selectedIds) {
+      const record = data.items.find((r) => r.id === id);
+      if (record) statuses.add(record.status);
+    }
+    return statuses;
+  }, [selectedIds, data?.items]);
+
+  const allSelectedActive = selectedIds.length > 0 && selectedStatuses.size === 1 && selectedStatuses.has('active');
+  const allSelectedArchived = selectedIds.length > 0 && selectedStatuses.size === 1 && selectedStatuses.has('archived');
+
   const downloadMutation = useMutation({
-    mutationFn: ({ ids, format }: { ids: number[]; format: 'json' | 'csv' }) =>
-      dataApi.download(ids, format),
+    mutationFn: (ids: number[]) => dataApi.download(ids),
     onSuccess: (blob) => {
-      downloadBlob(blob as unknown as Blob, `data-export-${Date.now()}.zip`);
+      downloadBlob(blob as unknown as Blob, `data-export-${Date.now()}.tar.gz`);
       message.success('下载成功');
     },
   });
@@ -128,7 +138,7 @@ const DataManage: React.FC = () => {
           type="link"
           size="small"
           icon={<DownloadOutlined />}
-          onClick={() => downloadMutation.mutate({ ids: [record.id], format: 'json' })}
+          onClick={() => downloadMutation.mutate([record.id])}
         />
       ),
     },
@@ -187,6 +197,7 @@ const DataManage: React.FC = () => {
             { value: 'fio_trend', label: 'FIO趋势' },
             { value: 'host_monitor', label: '主机监控' },
             { value: 'disk_monitor', label: '磁盘监控' },
+            { value: 'nvme_smart', label: 'NVMe SMART' },
           ]}
           placeholder="数据类型"
           style={{ width: 140 }}
@@ -228,7 +239,10 @@ const DataManage: React.FC = () => {
           pageSize: filters.pageSize,
           total: data?.total,
           showTotal: (total) => `共 ${total} 条`,
-          onChange: (page, pageSize) => setFilters((f) => ({ ...f, page, pageSize })),
+          onChange: (page, pageSize) => {
+            setFilters((f) => ({ ...f, page, pageSize }));
+            setSelectedIds([]);
+          },
         }}
       />
 
@@ -238,12 +252,12 @@ const DataManage: React.FC = () => {
           <span>已选 {selectedIds.length} 条</span>
           <Button
             icon={<DownloadOutlined />}
-            onClick={() => downloadMutation.mutate({ ids: selectedIds, format: 'json' })}
+            onClick={() => downloadMutation.mutate(selectedIds)}
             loading={downloadMutation.isPending}
           >
             批量下载
           </Button>
-          {data?.items?.every((item) => data.items.find((r) => selectedIds.includes(r.id))?.status === 'active') && (
+          {allSelectedActive && (
             <Button
               icon={<InboxOutlined />}
               onClick={() => archiveMutation.mutate(selectedIds)}
@@ -252,7 +266,7 @@ const DataManage: React.FC = () => {
               手动归档
             </Button>
           )}
-          {data?.items?.every((item) => data.items.find((r) => selectedIds.includes(r.id))?.status === 'archived') && (
+          {allSelectedArchived && (
             <Button
               icon={<CompressOutlined />}
               onClick={() => compressMutation.mutate(selectedIds)}

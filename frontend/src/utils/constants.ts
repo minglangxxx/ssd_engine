@@ -128,4 +128,5 @@ export const DATA_TYPE_MAP: Record<string, string> = {
   fio_trend: 'FIO趋势',
   host_monitor: '主机监控',
   disk_monitor: '磁盘监控',
+  nvme_smart: 'NVMe SMART',
 };

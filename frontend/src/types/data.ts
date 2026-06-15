@@ -1,17 +1,19 @@
 export type DataStatus = 'active' | 'archived' | 'compressed';
-export type DataType = 'fio_result' | 'fio_trend' | 'host_monitor' | 'disk_monitor';
+export type DataType = 'fio_result' | 'fio_trend' | 'host_monitor' | 'disk_monitor' | 'nvme_smart';
 
 export interface DataRecord {
   id: number;
   task_id: number | null;
   data_type: DataType;
   device_ip: string;
+  disk_name: string | null;
   status: DataStatus;
   size_bytes: number;
+  record_count: number;
   created_at: string;
   archived_at: string | null;
   compressed_at: string | null;
-  expires_at: string;
+  expires_at: string | null;
 }
 
 export interface DataOverview {

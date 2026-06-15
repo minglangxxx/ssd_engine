@@ -36,8 +36,8 @@ def download_data_records():
 @api_bp.post('/data/archive')
 def archive_data_records():
     payload = request.get_json(force=True) or {}
-    DataLifecycleService.manual_archive(payload.get('ids', []))
-    return success_response(None, 204)
+    success_ids = DataLifecycleService.manual_archive(payload.get('ids', []))
+    return success_response({'archived_count': len(success_ids), 'archived_ids': success_ids})
 
 
 @api_bp.post('/data/delete')
@@ -52,17 +52,17 @@ def auto_archive_and_cleanup():
     """
     手动触发自动归档和清理流程：
     1. 将超过 retention_days 的 active 数据自动归档到 JSON
-    2. 删除超过 retention_days 的原始数据
+    2. 删除超过 retention_days 的原始数据（保护 ACTIVE 记录的数据）
     """
     from app.config import Config
     retention_days = int(Config.MONITOR_RETENTION_DAYS or 7)
-    
+
     # 1. 自动归档
     archive_result = DataLifecycleService.auto_archive_ready_records(retention_days)
-    
+
     # 2. 自动清理
     cleanup_result = DataLifecycleService.auto_cleanup(retention_days)
-    
+
     return success_response({
         'archive': archive_result,
         'cleanup': cleanup_result
@@ -72,17 +72,19 @@ def auto_archive_and_cleanup():
 @api_bp.post('/data/compress')
 def compress_data_records():
     """
-    触发数据压缩：将已归档的数据从 JSON 转换为 Parquet 格式
+    触发数据压缩：将已归档的数据从 JSON 转换为 Parquet 格式。
+    支持指定 ids 只压缩选中的记录，不传则压缩所有归档记录。
     """
-    result = DataLifecycleService.auto_compress()
+    payload = request.get_json(force=True) or {}
+    ids = payload.get('ids', [])
+    result = DataLifecycleService.auto_compress(ids or None)
     return success_response(result)
 
 
 @api_bp.post('/data/cleanup')
 def cleanup_data():
     """
-    触发数据清理：删除超过保留期的数据
-    前置条件：超过保留期的 active 数据应先被自动归档
+    触发数据清理：删除超过保留期的数据（保护 ACTIVE 记录的数据）
     """
     from app.config import Config
     retention_days = int(Config.MONITOR_RETENTION_DAYS or 7)

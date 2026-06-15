@@ -41,8 +41,14 @@ class Config:
     AI_MODEL = os.getenv('AI_MODEL', 'gpt-4.1')
     AI_ANALYSIS_MAX_AGE_DAYS = int(os.getenv('AI_ANALYSIS_MAX_AGE_DAYS', '7'))
 
-    # 监控数据保留天数（超过后自动删除）
+    # 监控数据保留天数（超过后自动归档+清理）
     MONITOR_RETENTION_DAYS = int(os.getenv('MONITOR_RETENTION_DAYS', '7'))
 
     # NVMe SMART 数据保留天数
     NVME_SMART_RETENTION_DAYS = int(os.getenv('NVME_SMART_RETENTION_DAYS', '90'))
+
+    # 归档数据保留天数（归档后到期才清理 DataRecord 元数据）
+    ARCHIVE_RETENTION_DAYS = int(os.getenv('ARCHIVE_RETENTION_DAYS', '30'))
+
+    # 压缩数据保留天数（压缩后到期才清理 DataRecord 元数据）
+    COMPRESS_RETENTION_DAYS = int(os.getenv('COMPRESS_RETENTION_DAYS', '90'))
