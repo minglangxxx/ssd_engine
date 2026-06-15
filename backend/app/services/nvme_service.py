@@ -9,6 +9,7 @@ from app.executors.agent_executor import AgentExecutor
 from app.extensions import db
 from app.models.device import Device
 from app.models.nvme_smart import NvmeSmartData
+from app.utils.db import db_released
 from app.utils.helpers import ApiError
 from app.utils.logger import get_logger
 from app.utils.time import beijing_now, to_beijing_iso
@@ -452,16 +453,19 @@ class NvmeService:
         if device is None:
             raise ApiError('NOT_FOUND', '设备不存在', 404)
 
+        ip, port = device.ip, device.agent_port
+        device_id_val = device.id
         ctrl_match = re.match(r'^(nvme\d+)', disk_name)
         controller = ctrl_match.group(1) if ctrl_match else disk_name
 
-        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
+        agent = AgentExecutor(f'http://{ip}:{port}')
         try:
-            data = agent.get_nvme_id_ctrl(f'/dev/{controller}')
+            with db_released():
+                data = agent.get_nvme_id_ctrl(f'/dev/{controller}')
             if not data:
                 raise ApiError('NVME_CMD_FAILED', f'nvme id-ctrl 执行失败: {disk_name}', 502)
             return {
-                'device_id': device.id,
+                'device_id': device_id_val,
                 'disk_name': disk_name,
                 'data': data,
             }
@@ -474,13 +478,17 @@ class NvmeService:
         if device is None:
             raise ApiError('NOT_FOUND', '设备不存在', 404)
 
-        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
+        ip, port = device.ip, device.agent_port
+        device_id_val = device.id
+
+        agent = AgentExecutor(f'http://{ip}:{port}')
         try:
-            data = agent.get_nvme_id_ns(f'/dev/{disk_name}')
+            with db_released():
+                data = agent.get_nvme_id_ns(f'/dev/{disk_name}')
             if not data:
                 raise ApiError('NVME_CMD_FAILED', f'nvme id-ns 执行失败: {disk_name}', 502)
             return {
-                'device_id': device.id,
+                'device_id': device_id_val,
                 'disk_name': disk_name,
                 'data': data,
             }
@@ -493,13 +501,17 @@ class NvmeService:
         if device is None:
             raise ApiError('NOT_FOUND', '设备不存在', 404)
 
-        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
+        ip, port = device.ip, device.agent_port
+        device_id_val = device.id
+
+        agent = AgentExecutor(f'http://{ip}:{port}')
         try:
-            data = agent.get_nvme_error_log(f'/dev/{disk_name}')
+            with db_released():
+                data = agent.get_nvme_error_log(f'/dev/{disk_name}')
             if not data:
                 raise ApiError('NVME_CMD_FAILED', f'nvme error-log 执行失败: {disk_name}', 502)
             return {
-                'device_id': device.id,
+                'device_id': device_id_val,
                 'disk_name': disk_name,
                 'data': data,
             }

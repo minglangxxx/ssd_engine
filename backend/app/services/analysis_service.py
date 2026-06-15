@@ -16,6 +16,7 @@ from app.models.analysis import AiAnalysis
 from app.models.task import Task
 from app.services.monitor_service import MonitorService
 from app.services.task_service import TaskService
+from app.utils.db import db_released
 from app.utils.helpers import ApiError
 
 
@@ -162,6 +163,7 @@ class AnalysisService:
                 include_host_monitor,
                 include_disk_monitor,
             )
+            db.session.remove()
 
     def _execute_analysis(
         self,
@@ -174,6 +176,8 @@ class AnalysisService:
     ) -> AiAnalysis:
 
         try:
+            analysis_id = analysis.id
+            task_id = task.id
             context = self._build_context(
                 task,
                 execution_window,
@@ -181,29 +185,39 @@ class AnalysisService:
                 include_host_monitor,
                 include_disk_monitor,
             )
-            completion = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {'role': 'system', 'content': self._system_prompt()},
-                    {'role': 'user', 'content': self._build_prompt(context)},
-                ],
-                temperature=0.3,
-                max_tokens=4096,
-            )
-            report = completion.choices[0].message.content or ''
-            analysis.status = 'completed'
-            analysis.report = report
-            analysis.summary = self._extract_summary(report)
-            analysis.input_manifest = context.get('input_manifest')
-            analysis.source_snapshot_version = task.updated_at.isoformat() if task.updated_at else None
-            analysis.completed_at = datetime.utcnow()
-            task.last_analysis_at = analysis.completed_at
-            db.session.commit()
+            with db_released():
+                completion = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {'role': 'system', 'content': self._system_prompt()},
+                        {'role': 'user', 'content': self._build_prompt(context)},
+                    ],
+                    temperature=0.3,
+                    max_tokens=4096,
+                )
+            try:
+                analysis = AiAnalysis.query.get(analysis_id)
+                task = Task.query.get(task_id)
+                report = completion.choices[0].message.content or ''
+                analysis.status = 'completed'
+                analysis.report = report
+                analysis.summary = self._extract_summary(report)
+                analysis.input_manifest = context.get('input_manifest')
+                analysis.source_snapshot_version = task.updated_at.isoformat() if task.updated_at else None
+                analysis.completed_at = datetime.utcnow()
+                task.last_analysis_at = analysis.completed_at
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                raise
             return analysis
         except Exception as error:
-            analysis.status = 'failed'
-            analysis.error = str(error)
-            db.session.commit()
+            db.session.rollback()
+            analysis = AiAnalysis.query.get(analysis_id)
+            if analysis:
+                analysis.status = 'failed'
+                analysis.error = str(error)
+                db.session.commit()
             return analysis
 
     def _build_context(

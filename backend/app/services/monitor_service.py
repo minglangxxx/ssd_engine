@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
 
+import requests
+
+from flask import current_app
+
 from app.executors.agent_executor import AgentExecutor
 from app.models.device import Device
 from app.models.monitor_data import DiskMonitorSample, HostMonitorData
 from app.services.device_service import DeviceService
+from app.utils.db import db_released
+from app.utils.helpers import ApiError
 from app.utils.time import to_beijing_iso
 
 
@@ -55,10 +61,6 @@ class MonitorService:
 
     @staticmethod
     def get_host_metrics(host: str, start: str | None = None, end: str | None = None) -> list[dict]:
-        """
-        查询主机监控数据：严格从数据库查询，不访问 Agent API。
-        监控数据只来自数据库（由 Agent 定期推送写入），后续可接入 Redis 缓存层。
-        """
         query = HostMonitorData.query.filter_by(device_ip=host)
         start_time = MonitorService._parse_timestamp(start)
         end_time = MonitorService._parse_timestamp(end)
@@ -81,7 +83,8 @@ class MonitorService:
     def get_disk_list(host: str) -> list[str]:
         agent = MonitorService.get_agent(host)
         try:
-            disks = agent.get_disk_list()
+            with db_released():
+                disks = agent.get_disk_list()
             names: list[str] = []
             for disk in disks:
                 if isinstance(disk, dict):
@@ -89,6 +92,9 @@ class MonitorService:
                 elif isinstance(disk, str):
                     names.append(disk)
             return [item for item in names if item]
+        except requests.RequestException as e:
+            current_app.logger.warning('Agent %s 离线: %s', host, e)
+            raise ApiError('AGENT_OFFLINE', 'Agent 离线，无法获取磁盘列表', 502)
         finally:
             agent.close()
 
@@ -111,7 +117,12 @@ class MonitorService:
 
         agent = MonitorService.get_agent(host)
         try:
-            return [agent.get_disk_monitor(disk_name)]
+            with db_released():
+                result = agent.get_disk_monitor(disk_name)
+            return [result]
+        except requests.RequestException as e:
+            current_app.logger.warning('Agent %s 离线，磁盘指标降级返回空: %s', host, e)
+            return []
         finally:
             agent.close()
 
@@ -119,23 +130,29 @@ class MonitorService:
     def get_host_summary(host: str) -> dict:
         agent = MonitorService.get_agent(host)
         try:
-            snapshot = agent.get_host_monitor()
-            cpu = snapshot.get('cpu', {})
-            memory = snapshot.get('memory', {})
-            system = snapshot.get('system', {})
-            return {
-                'cpu_usage_percent': cpu.get('cpu_usage_percent', 0),
-                'mem_usage_percent': memory.get('mem_usage_percent', 0),
-                'iowait_percent': cpu.get('cpu_iowait_percent', 0),
-                'load_avg_1m': cpu.get('load_avg_1m', 0),
-                'load_avg_5m': cpu.get('load_avg_5m', 0),
-                'load_avg_15m': cpu.get('load_avg_15m', 0),
-                'uptime_seconds': system.get('uptime_seconds', 0),
-                'kernel_version': system.get('kernel_version', ''),
-                'process_count': system.get('process_count', 0),
-            }
+            with db_released():
+                snapshot = agent.get_host_monitor()
+        except requests.RequestException as e:
+            current_app.logger.warning('Agent %s 离线: %s', host, e)
+            raise ApiError('AGENT_OFFLINE', 'Agent 离线，无法获取主机监控数据', 502)
         finally:
             agent.close()
+        if not isinstance(snapshot, dict):
+            raise ApiError('AGENT_ERROR', 'Agent 返回数据格式异常', 502)
+        cpu = snapshot.get('cpu', {})
+        memory = snapshot.get('memory', {})
+        system = snapshot.get('system', {})
+        return {
+            'cpu_usage_percent': cpu.get('cpu_usage_percent', 0),
+            'mem_usage_percent': memory.get('mem_usage_percent', 0),
+            'iowait_percent': cpu.get('cpu_iowait_percent', 0),
+            'load_avg_1m': cpu.get('load_avg_1m', 0),
+            'load_avg_5m': cpu.get('load_avg_5m', 0),
+            'load_avg_15m': cpu.get('load_avg_15m', 0),
+            'uptime_seconds': system.get('uptime_seconds', 0),
+            'kernel_version': system.get('kernel_version', ''),
+            'process_count': system.get('process_count', 0),
+        }
 
     @staticmethod
     def _parse_timestamp(value: str | None) -> datetime | None:

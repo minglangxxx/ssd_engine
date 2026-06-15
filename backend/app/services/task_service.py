@@ -9,6 +9,7 @@ from app.models.data_record import DataRecord, DataStatus
 from app.models.device import Device
 from app.models.fio_trend import FioTrendData
 from app.models.task import Task, TaskStatus
+from app.utils.db import db_released
 from app.utils.helpers import ApiError
 from app.workloads.fio_workload import FioConfigError, FioConfigValidator
 from app.utils.logger import get_logger
@@ -119,27 +120,34 @@ class TaskService:
             raise ApiError('VALIDATION_ERROR', '只有运行中或待启动任务可以停止', 400)
 
         device = TaskService._get_task_device(task)
-        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
+        ip, port = device.ip, device.agent_port
+        task_id_str = str(task_id)
+
+        agent = AgentExecutor(f'http://{ip}:{port}')
         try:
-            if not agent.test_connection():
-                logger.error(f"Failed to connect to agent on {device.ip}:{device.agent_port} when stopping task {task_id}")
-                raise ApiError('CONNECTION_ERROR', 'Agent 无响应，无法停止任务', 503)
+            with db_released():
+                if not agent.test_connection():
+                    raise ApiError('CONNECTION_ERROR', 'Agent 无响应，无法停止任务', 503)
+                response = agent.fio_stop(task_id_str)
+                if not response.get('success', False):
+                    raise ApiError('CONNECTION_ERROR', 'Agent 停止任务失败', 503)
+                trend_data = agent.fio_trend(task_id_str)
+        finally:
+            agent.close()
 
-            response = agent.fio_stop(str(task_id))
-            if not response.get('success', False):
-                logger.error(f"Agent failed to stop task {task_id}, response: {response}")
-                raise ApiError('CONNECTION_ERROR', 'Agent 停止任务失败', 503)
-
+        try:
+            task = Task.query.get(task_id)
             task.status = TaskStatus.FAILED
             task.result = task.result or {}
             task.result['error'] = 'User cancelled'
             task.updated_at = datetime.utcnow()
-            TaskService._replace_trend_points(task.id, agent.fio_trend(str(task_id)))
+            TaskService._replace_trend_points(task.id, trend_data)
             db.session.commit()
             logger.info(f"Task {task_id} stopped successfully")
             return task
-        finally:
-            agent.close()
+        except Exception:
+            db.session.rollback()
+            raise
 
     @staticmethod
     def retry(task_id: int) -> Task:
@@ -150,10 +158,15 @@ class TaskService:
             raise ApiError('VALIDATION_ERROR', '只有失败任务可以重试', 400)
 
         device = TaskService._get_task_device(task)
+        device_id = device.id
+
         FioTrendData.query.filter_by(task_id=task.id).delete()
         task.result = None
         task.status = TaskStatus.PENDING
         task.updated_at = datetime.utcnow()
+        db.session.commit()
+
+        device = Device.query.get(device_id)
         TaskService._start_task(task, device)
         db.session.commit()
         logger.info(f"Task {task_id} retry initiated successfully")
@@ -180,15 +193,30 @@ class TaskService:
             return task
 
         device = TaskService._get_task_device(task)
+        ip, port = device.ip, device.agent_port
+        task_id = task.id
+        task_id_str = str(task_id)
 
-        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
+        agent = AgentExecutor(f'http://{ip}:{port}')
+        agent_online = False
+        status_payload = {}
+        trend_data = None
         try:
-            if not agent.test_connection():
-                logger.warning(f"Cannot connect to agent on {device.ip}:{device.agent_port} for task {task.id}")
-                return task
+            with db_released():
+                if agent.test_connection():
+                    agent_online = True
+                    status_payload = agent.fio_status(task_id_str)
+                    remote_status = str(status_payload.get('status', '')).lower()
+                    if remote_status not in {'pending', 'running'}:
+                        trend_data = agent.fio_trend(task_id_str)
+        finally:
+            agent.close()
 
-            status_payload = agent.fio_status(str(task.id))
-            remote_status = str(status_payload.get('status', '')).lower()
+        if not agent_online:
+            return Task.query.get(task_id)
+
+        try:
+            task = Task.query.get(task_id)
             logger.debug(f"Remote status for task {task.id}: {remote_status}")
 
             if remote_status in {'pending', 'running'}:
@@ -196,8 +224,8 @@ class TaskService:
                 if task.status != mapped_status:
                     task.status = mapped_status
                     task.updated_at = datetime.utcnow()
-                    db.session.commit()
-                    logger.info(f"Updated task {task.id} status to {mapped_status}")
+                db.session.commit()
+                logger.info(f"Updated task {task.id} status to {mapped_status}")
                 return task
 
             if remote_status == 'success':
@@ -208,12 +236,7 @@ class TaskService:
                 task.data_window_start = task.started_at or task.data_window_start
                 task.data_window_end = task.finished_at or task.data_window_end
                 task.updated_at = datetime.utcnow()
-                TaskService._replace_trend_points(task.id, agent.fio_trend(str(task.id)))
-                db.session.commit()
-                logger.info(f"Task {task.id} completed successfully")
-                return task
-
-            if remote_status in {'failed', 'not_found'}:
+            elif remote_status in {'failed', 'not_found'}:
                 task.status = TaskStatus.FAILED
                 task.result = task.result or {}
                 if status_payload.get('error'):
@@ -223,12 +246,25 @@ class TaskService:
                 task.data_window_start = task.started_at or task.data_window_start
                 task.data_window_end = task.finished_at or task.data_window_end
                 task.updated_at = datetime.utcnow()
-                TaskService._replace_trend_points(task.id, agent.fio_trend(str(task.id)))
-                db.session.commit()
-                logger.warning(f"Task {task.id} failed: {status_payload.get('error', 'Unknown error')}")
-            return task
-        finally:
-            agent.close()
+            else:
+                logger.warning('Unknown remote status %s for task %s, treating as FAILED', remote_status, task.id)
+                task.status = TaskStatus.FAILED
+                task.result = task.result or {}
+                task.result['error'] = f'Unknown remote status: {remote_status}'
+                task.updated_at = datetime.utcnow()
+
+            if trend_data:
+                TaskService._replace_trend_points(task.id, trend_data)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
+
+        if remote_status == 'success':
+            logger.info(f"Task {task.id} completed successfully")
+        else:
+            logger.warning(f"Task {task.id} failed: {status_payload.get('error', 'Unknown error')}")
+        return task
 
     @staticmethod
     def get_execution_window(
@@ -277,23 +313,38 @@ class TaskService:
 
     @staticmethod
     def _start_task(task: Task, device: Device) -> None:
-        logger.info(f"Starting task {task.id} on device {device.ip}")
-        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
+        ip, port = device.ip, device.agent_port
+        task_id = task.id
+        config = task.config
+        device_path = task.device_path
+        agent = AgentExecutor(f'http://{ip}:{port}')
         try:
-            if not agent.test_connection():
-                logger.error(f"Failed to connect to agent on {device.ip}:{device.agent_port} when starting task {task.id}")
-                raise ApiError('CONNECTION_ERROR', 'Agent 无响应，无法启动任务', 503)
-
-            response = agent.fio_start(str(task.id), task.config, task.device_path)
-            if not response.get('success', False):
-                logger.error(f"Agent failed to start task {task.id}, response: {response}")
-                raise ApiError('CONNECTION_ERROR', 'Agent 启动 FIO 任务失败', 503)
-
-            task.status = TaskStatus.RUNNING
-            task.updated_at = datetime.utcnow()
-            logger.info(f"Task {task.id} started successfully on device {device.ip}")
+            with db_released():
+                if not agent.test_connection():
+                    logger.error(f"Failed to connect to agent on {ip}:{port} when starting task {task_id}")
+                    raise ApiError('CONNECTION_ERROR', 'Agent 无响应，无法启动任务', 503)
+                response = agent.fio_start(str(task_id), config, device_path)
+                if not response.get('success', False):
+                    logger.error(f"Agent failed to start task {task_id}, response: {response}")
+                    raise ApiError('CONNECTION_ERROR', 'Agent 启动 FIO 任务失败', 503)
+        except Exception:
+            try:
+                task = Task.query.get(task_id)
+                if task and task.status in {TaskStatus.PENDING, TaskStatus.RUNNING}:
+                    task.status = TaskStatus.FAILED
+                    task.result = task.result or {}
+                    task.result['error'] = 'Failed to start task on agent'
+                    task.updated_at = datetime.utcnow()
+                    db.session.commit()
+            except Exception:
+                db.session.rollback()
+            raise
         finally:
             agent.close()
+        task = Task.query.get(task_id)
+        task.status = TaskStatus.RUNNING
+        task.updated_at = datetime.utcnow()
+        logger.info(f"Task {task_id} started successfully on device {ip}")
 
     @staticmethod
     def _get_task_device(task: Task) -> Device:
@@ -311,16 +362,18 @@ class TaskService:
         device = Device.query.get(task.device_id)
         if device is None:
             return None, None
+        ip, port = device.ip, device.agent_port
 
-        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
+        agent = AgentExecutor(f'http://{ip}:{port}')
         try:
-            if not agent.test_connection():
-                return None, None
-            status_payload = agent.fio_status(str(task.id))
-            return (
-                TaskService._parse_timestamp(status_payload.get('start_time')),
-                TaskService._parse_timestamp(status_payload.get('end_time')),
-            )
+            with db_released():
+                if not agent.test_connection():
+                    return None, None
+                status_payload = agent.fio_status(str(task.id))
+                return (
+                    TaskService._parse_timestamp(status_payload.get('start_time')),
+                    TaskService._parse_timestamp(status_payload.get('end_time')),
+                )
         except Exception as error:
             logger.warning('Failed to read execution window from agent for task %s: %s', task.id, error)
             return None, None

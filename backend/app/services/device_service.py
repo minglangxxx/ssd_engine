@@ -3,6 +3,7 @@ from datetime import datetime
 from app.executors.agent_executor import AgentExecutor
 from app.extensions import db
 from app.models.device import Device
+from app.utils.db import db_released
 from app.utils.helpers import ApiError
 from app.utils.logger import get_logger
 
@@ -110,33 +111,35 @@ class DeviceService:
         logger.info(f"Getting device info for device ID: {device_id}")
         device = DeviceService.get(device_id)
         data = device.to_dict()
-        agent = DeviceService.get_agent(device)
+        ip, port = device.ip, device.agent_port
+        agent = DeviceService.get_agent(ip, port)
         try:
-            if agent.test_connection():
-                logger.debug(f"Fetching disk list for device {device.ip}")
-                disks = agent.get_disk_list()
-                normalized_disks = []
-                for disk in disks:
-                    if isinstance(disk, dict):
-                        name = disk.get('name') or ''
-                        device_path = disk.get('device') or (f"/dev/{name}" if name else '')
-                        normalized_disks.append({
-                            'name': name,
-                            'device': device_path,
-                            'mountpoint': disk.get('mountpoint', ''),
-                            'fstype': disk.get('fstype', ''),
-                        })
-                    elif isinstance(disk, str):
-                        normalized_disks.append({
-                            'name': disk,
-                            'device': f'/dev/{disk}',
-                            'mountpoint': '',
-                            'fstype': '',
-                        })
-                data['disks'] = normalized_disks
-                logger.info(f"Retrieved {len(disks)} disks for device {device.ip}")
-            else:
-                logger.warning(f"Agent connection failed when fetching device info for {device.ip}")
+            with db_released():
+                if agent.test_connection():
+                    logger.debug(f"Fetching disk list for device {ip}")
+                    disks = agent.get_disk_list()
+                    normalized_disks = []
+                    for disk in disks:
+                        if isinstance(disk, dict):
+                            name = disk.get('name') or ''
+                            device_path = disk.get('device') or (f"/dev/{name}" if name else '')
+                            normalized_disks.append({
+                                'name': name,
+                                'device': device_path,
+                                'mountpoint': disk.get('mountpoint', ''),
+                                'fstype': disk.get('fstype', ''),
+                            })
+                        elif isinstance(disk, str):
+                            normalized_disks.append({
+                                'name': disk,
+                                'device': f'/dev/{disk}',
+                                'mountpoint': '',
+                                'fstype': '',
+                            })
+                    data['disks'] = normalized_disks
+                    logger.info(f"Retrieved {len(disks)} disks for device {ip}")
+                else:
+                    logger.warning(f"Agent connection failed when fetching device info for {ip}")
             return data
         finally:
             agent.close()
@@ -145,21 +148,25 @@ class DeviceService:
     def get_agent_status(device_id: int) -> dict:
         logger.info(f"Getting agent status for device ID: {device_id}")
         device = DeviceService.get(device_id)
-        agent = DeviceService.get_agent(device)
+        ip, port = device.ip, device.agent_port
+        agent = DeviceService.get_agent(ip, port)
         try:
-            if agent.test_connection():
-                health = agent.get_health()
-                device.agent_status = 'online'
-                device.agent_version = health.get('version', '')
-                device.last_heartbeat = datetime.utcnow()
-                logger.info(f"Agent for device {device.ip} is online, version: {device.agent_version}")
-            else:
-                device.agent_status = 'offline'
-                logger.warning(f"Agent for device {device.ip} is offline")
-            db.session.commit()
-            return {
-                'status': device.agent_status,
-                'version': device.agent_version or '',
-            }
+            with db_released():
+                online = agent.test_connection()
+                version = ''
+                if online:
+                    health = agent.get_health()
+                    version = health.get('version', '')
         finally:
             agent.close()
+        try:
+            device = Device.query.get(device_id)
+            device.agent_status = 'online' if online else 'offline'
+            device.agent_version = version
+            if online:
+                device.last_heartbeat = datetime.utcnow()
+            db.session.commit()
+            return {'status': device.agent_status, 'version': device.agent_version or ''}
+        except Exception:
+            db.session.rollback()
+            raise
