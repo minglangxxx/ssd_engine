@@ -22,3 +22,19 @@ export interface NvmeDetailResponse {
   disk_name: string;
   data: Record<string, unknown>;
 }
+
+export interface NvmeFeatureResponse {
+  device_id: number;
+  disk_name: string;
+  fid: string;
+  data: Record<string, unknown>;
+}
+
+export interface NvmeFwLogResponse {
+  device_id: number;
+  disk_name: string;
+  data: {
+    afi: { active: number };
+    frs: string[];
+  };
+}

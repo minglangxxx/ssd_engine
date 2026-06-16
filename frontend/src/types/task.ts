@@ -11,6 +11,7 @@ export interface Task {
   result: TaskResult | null;
   created_at: string;
   updated_at: string;
+  stale?: boolean;
 }
 
 export interface FioConfig {
@@ -48,7 +49,7 @@ export interface FioConfig {
 export interface TaskResult {
   iops: number;
   bandwidth: number;
-  latency: { mean: number; min: number; max: number };
+  latency: { mean: number; min: number; max: number; p99?: number };
   read_iops?: number;
   write_iops?: number;
   read_bw?: number;
@@ -108,6 +109,7 @@ export interface TaskStatusResponse {
   error?: string | null;
   result: TaskResult | null;
   updated_at: string | null;
+  stale?: boolean;
 }
 
 export function buildFioConfig(config: Partial<FioConfig>): Record<string, unknown> {

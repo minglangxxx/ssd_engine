@@ -9,18 +9,22 @@ export const useNvmeList = (deviceId: number) =>
     enabled: !!deviceId,
   });
 
-export type NvmeDetailType = 'id-ctrl' | 'id-ns' | 'smart-log' | 'error-log' | null;
+export type NvmeDetailType = 'id-ctrl' | 'id-ns' | 'smart-log' | 'error-log' | 'get-feature' | 'fw-log' | null;
 
-export const useNvmeDetail = (deviceId: number, diskName: string, type: NvmeDetailType) => {
+export const useNvmeDetail = (deviceId: number, diskName: string, type: NvmeDetailType, fid?: string) => {
   const queryFnMap: Record<string, () => Promise<unknown>> = {
     'id-ctrl': () => nvmeApi.getIdCtrl(deviceId, diskName),
     'id-ns': () => nvmeApi.getIdNs(deviceId, diskName),
     'smart-log': () => smartApi.getLatest(deviceId),
     'error-log': () => nvmeApi.getErrorLog(deviceId, diskName),
+    'get-feature': () => nvmeApi.getFeature(deviceId, diskName, fid || '0x06'),
+    'fw-log': () => nvmeApi.getFwLog(deviceId, diskName),
   };
   const queryKey = type === 'smart-log'
     ? ['nvme-detail', deviceId, 'smart-log']
-    : ['nvme-detail', deviceId, diskName, type];
+    : type === 'get-feature'
+      ? ['nvme-detail', deviceId, diskName, type, fid]
+      : ['nvme-detail', deviceId, diskName, type];
   return useQuery({
     queryKey,
     queryFn: () => queryFnMap[type!](),

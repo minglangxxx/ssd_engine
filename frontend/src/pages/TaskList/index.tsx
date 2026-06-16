@@ -36,7 +36,7 @@ const TaskList: React.FC = () => {
       title: '状态',
       dataIndex: 'status',
       width: 100,
-      render: (s: TaskStatus) => <TaskStatusBadge status={s} />,
+      render: (_: unknown, record: Task) => <TaskStatusBadge status={record.status} stale={record.stale} />,
     },
     { title: '设备IP', dataIndex: 'device_ip', width: 140 },
     {

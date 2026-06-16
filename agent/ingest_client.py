@@ -253,6 +253,8 @@ class BackendIngestClient:
         result: dict[str, Any] | None,
         started_at: float | None,
         finished_at: float | None,
+        *,
+        raw_output: str | None = None,
     ) -> None:
         if not self.enabled:
             return
@@ -267,6 +269,8 @@ class BackendIngestClient:
             'data_window_start': self._to_iso_datetime(started_at),
             'data_window_end': self._to_iso_datetime(finished_at),
         }
+        if raw_output is not None:
+            payload['raw_output'] = raw_output
         self._post_json('/api/internal/ingest/flush-task', payload)
 
     def _flush_loop(self) -> None:

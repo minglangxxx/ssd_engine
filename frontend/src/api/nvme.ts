@@ -1,5 +1,5 @@
 import request from '@/utils/request';
-import type { NvmeListResponse, NvmeDetailResponse } from '@/types/nvme';
+import type { NvmeListResponse, NvmeDetailResponse, NvmeFeatureResponse, NvmeFwLogResponse } from '@/types/nvme';
 
 export const nvmeApi = {
   getList: (deviceId: number) =>
@@ -13,4 +13,15 @@ export const nvmeApi = {
 
   getErrorLog: (deviceId: number, diskName: string) =>
     request.get<unknown, NvmeDetailResponse>(`/devices/${deviceId}/nvme/${diskName}/error-log`),
+
+  getFeature: (deviceId: number, diskName: string, fid: string = '0x06') =>
+    request.get<unknown, NvmeFeatureResponse>(
+      `/devices/${deviceId}/nvme/${diskName}/get-feature`,
+      { params: { fid } }
+    ),
+
+  getFwLog: (deviceId: number, diskName: string) =>
+    request.get<unknown, NvmeFwLogResponse>(
+      `/devices/${deviceId}/nvme/${diskName}/fw-log`
+    ),
 };

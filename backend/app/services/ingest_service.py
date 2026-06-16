@@ -339,6 +339,8 @@ class IngestService:
             task.data_window_end = data_window_end
         if payload.get('result') is not None:
             task.result = payload.get('result')
+        if 'raw_output' in payload:
+            task.raw_output = payload.get('raw_output')
         if payload.get('status'):
             task.status = str(payload.get('status'))
 

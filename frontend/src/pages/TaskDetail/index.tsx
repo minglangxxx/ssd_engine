@@ -36,7 +36,7 @@ const TaskDetail: React.FC = () => {
           </Button>
           <h2 style={{ margin: 0 }}>任务详情 - {task.name}</h2>
         </Space>
-        <TaskStatusBadge status={task.status} />
+        <TaskStatusBadge status={task.status} stale={task.stale} />
       </div>
 
       {/* 基本信息 */}
@@ -98,6 +98,11 @@ const TaskDetail: React.FC = () => {
             <Col span={6}>
               <Statistic title="最大延迟" value={result.latency?.max} suffix="μs" precision={1} />
             </Col>
+            {result.latency?.p99 != null && (
+              <Col span={6}>
+                <Statistic title="P99 延迟" value={result.latency.p99} suffix="μs" precision={1} />
+              </Col>
+            )}
           </Row>
         </Card>
       )}

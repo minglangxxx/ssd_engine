@@ -28,6 +28,7 @@ class FioTask:
         self.status = 'pending'
         self.process: subprocess.Popen[str] | None = None
         self.result: dict[str, Any] | None = None
+        self.raw_output: str | None = None
         self.error: str | None = None
         self.trend_data: deque[dict[str, Any]] = deque(maxlen=86400)
         self.start_time: float | None = None
@@ -56,6 +57,7 @@ class FioRunner:
             command = self._build_command(task)
             logger.info('Launching FIO task %s with command: %s', task.task_id, ' '.join(command))
             reports: list[dict[str, Any]] = []
+            full_stdout: list[str] = []
             stderr_chunks: list[str] = []
             task.process = subprocess.Popen(
                 command,
@@ -67,7 +69,7 @@ class FioRunner:
 
             stdout_thread = threading.Thread(
                 target=self._consume_stdout,
-                args=(task, reports),
+                args=(task, reports, full_stdout),
                 daemon=True,
             )
             stderr_thread = threading.Thread(
@@ -87,12 +89,18 @@ class FioRunner:
             if task.process.returncode == 0:
                 task.status = 'success'
                 task.result = self._parse_result(reports[-1] if reports else None)
+                raw_text = ''.join(full_stdout).strip()
+                if raw_text:
+                    task.raw_output = raw_text
                 task.error = None
                 logger.info('FIO task %s completed successfully', task.task_id)
                 return
 
             task.status = 'failed'
             task.error = stderr or f'fio exited with code {task.process.returncode}'
+            raw_text = ''.join(full_stdout).strip()
+            if raw_text:
+                task.raw_output = raw_text
             logger.error('FIO task %s failed with error: %s', task.task_id, task.error)
         except Exception as error:
             task.status = 'failed'
@@ -107,6 +115,7 @@ class FioRunner:
                     task.result if isinstance(task.result, dict) else ({'error': task.error} if task.error else None),
                     task.start_time,
                     task.end_time,
+                    raw_output=task.raw_output,
                 )
             logger.info(
                 'FIO task %s ended at %s',
@@ -152,7 +161,7 @@ class FioRunner:
             return 1
         return max(1, math.ceil(int(raw_value) / 1000))
 
-    def _consume_stdout(self, task: FioTask, reports: list[dict[str, Any]]) -> None:
+    def _consume_stdout(self, task: FioTask, reports: list[dict[str, Any]], full_stdout: list[str]) -> None:
         if task.process is None or task.process.stdout is None:
             return
 
@@ -162,6 +171,7 @@ class FioRunner:
             chunk = task.process.stdout.read(4096)
             if not chunk:
                 break
+            full_stdout.append(chunk)
             buffer += chunk
             buffer = self._extract_json_reports(buffer, decoder, task, reports)
 
@@ -315,6 +325,7 @@ class FioRunner:
             latency_mean = 0.0
             latency_min = 0.0
             latency_max = 0.0
+            latency_p99 = 0.0
             latency_samples = []
             for direction in ('read', 'write'):
                 for job in jobs:
@@ -338,6 +349,12 @@ class FioRunner:
                     self._convert_to_microseconds(float(sample.get('max', 0) or 0), float(sample.get('divisor', 1) or 1))
                     for sample in latency_samples
                 )
+                latency_p99 = max(
+                    self._convert_to_microseconds(
+                        self._extract_percentile_value(sample), float(sample.get('divisor', 1) or 1)
+                    )
+                    for sample in latency_samples
+                )
 
             result = {
                 'iops': read_iops + write_iops,
@@ -350,6 +367,7 @@ class FioRunner:
                     'mean': latency_mean,
                     'min': latency_min,
                     'max': latency_max,
+                    'p99': round(latency_p99, 1),
                 },
             }
             logger.info(

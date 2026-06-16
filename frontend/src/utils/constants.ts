@@ -1,6 +1,7 @@
 export const TASK_STATUS_MAP: Record<string, { color: string; text: string }> = {
   PENDING: { color: 'default', text: '等待中' },
   RUNNING: { color: 'processing', text: '运行中' },
+  RUNNING_STALE: { color: 'warning', text: '运行中(离线)' },
   SUCCESS: { color: 'success', text: '成功' },
   FAILED: { color: 'error', text: '失败' },
 };

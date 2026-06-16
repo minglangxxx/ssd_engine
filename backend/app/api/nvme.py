@@ -56,3 +56,16 @@ def get_nvme_id_ns(device_id: int, disk_name: str):
 def get_nvme_error_log(device_id: int, disk_name: str):
     result = NvmeService.get_nvme_error_log(device_id, disk_name)
     return success_response(result)
+
+
+@api_bp.get('/devices/<int:device_id>/nvme/<disk_name>/get-feature')
+def get_nvme_feature(device_id: int, disk_name: str):
+    fid = request.args.get('fid', '0x06')
+    result = NvmeService.get_nvme_feature(device_id, disk_name, fid)
+    return success_response(result)
+
+
+@api_bp.get('/devices/<int:device_id>/nvme/<disk_name>/fw-log')
+def get_nvme_fw_log(device_id: int, disk_name: str):
+    result = NvmeService.get_nvme_fw_log(device_id, disk_name)
+    return success_response(result)

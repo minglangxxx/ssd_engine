@@ -42,6 +42,11 @@ def get_task_status(task_id: int):
     return success_response(TaskService.get_status(task_id))
 
 
+@api_bp.get('/tasks/<int:task_id>/raw')
+def get_task_raw(task_id: int):
+    return success_response(TaskService.get_raw(task_id))
+
+
 @api_bp.delete('/tasks/<int:task_id>')
 def delete_task(task_id: int):
     TaskService.delete(task_id)
