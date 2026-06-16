@@ -89,8 +89,12 @@ def _start_scheduler(app: Flask) -> None:
         id='monitor_cleanup',
         replace_existing=True,
     )
+    def agent_status_check_job():
+        with app.app_context():
+            check_all_agents()
+
     scheduler.add_job(
-        check_all_agents,
+        agent_status_check_job,
         trigger=IntervalTrigger(seconds=CHECK_INTERVAL_SECONDS),
         id='agent_status_check',
         replace_existing=True,

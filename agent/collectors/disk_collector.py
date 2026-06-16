@@ -1,3 +1,4 @@
+import re
 import time
 
 import psutil
@@ -5,6 +6,13 @@ import psutil
 from logger import get_logger
 
 logger = get_logger(__name__)
+
+_NVME_PARTITION_RE = re.compile(r'^(nvme\d+n\d+)p\d+$')
+
+
+def _base_disk_name(name: str) -> str:
+    m = _NVME_PARTITION_RE.match(name)
+    return m.group(1) if m else name
 
 
 class DiskCollector:
@@ -20,12 +28,13 @@ class DiskCollector:
         now: float,
         delta: float,
     ) -> dict:
-        current_disk = current.get(disk_name)
+        lookup_name = _base_disk_name(disk_name)
+        current_disk = current.get(lookup_name)
         if current_disk is None:
-            logger.warning('Disk metrics requested for unknown disk: %s', disk_name)
+            logger.warning('Disk metrics requested for unknown disk: %s (lookup: %s)', disk_name, lookup_name)
             return {'disk_name': disk_name}
 
-        previous_disk = previous.get(disk_name) or current_disk
+        previous_disk = previous.get(lookup_name) or current_disk
         read_ios = current_disk.read_count - previous_disk.read_count
         write_ios = current_disk.write_count - previous_disk.write_count
         return {

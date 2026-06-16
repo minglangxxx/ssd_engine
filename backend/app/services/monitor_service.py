@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone, timedelta
 
 import requests
@@ -13,6 +14,8 @@ from app.services.device_service import DeviceService
 from app.utils.db import db_released
 from app.utils.helpers import ApiError
 from app.utils.time import to_beijing_iso
+
+_NVME_PARTITION_RE = re.compile(r'^(nvme\d+n\d+)p\d+$')
 
 
 class MonitorService:
@@ -99,8 +102,14 @@ class MonitorService:
             agent.close()
 
     @staticmethod
+    def _normalize_disk_name(name: str) -> str:
+        m = _NVME_PARTITION_RE.match(name)
+        return m.group(1) if m else name
+
+    @staticmethod
     def get_disk_metrics(host: str, disk_name: str, start: str | None = None, end: str | None = None) -> list[dict]:
-        query = DiskMonitorSample.query.filter_by(device_ip=host, disk_name=disk_name)
+        query_disk = MonitorService._normalize_disk_name(disk_name)
+        query = DiskMonitorSample.query.filter_by(device_ip=host, disk_name=query_disk)
         start_time = MonitorService._parse_timestamp(start)
         end_time = MonitorService._parse_timestamp(end)
         if start_time is not None:
