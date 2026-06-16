@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir D:codemodelssd_enginedocsplan *)",
+      "Bash(dir D:codemodelssd_engine *)",
+      "Bash(powershell *)",
+      "Bash(cmd.exe *)",
+      "Bash(/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe *)",
+      "Bash(dir *)",
+      "Bash(cmd *)",
+      "Bash(/usr/bin/ls *)",
+      "Bash(/bin/ls \"D:/code/model/ssd_engine/agent/\")",
+      "Bash(powershell.exe -Command \"Get-ChildItem -Path 'D:\\\\code\\\\model\\\\ssd_engine\\\\agent' -Recurse -Name\")",
+      "Bash(/bin/ls D:/code/model/ssd_engine/frontend/src/api/)",
+      "Bash(python3 -c \"import os; print\\(os.listdir\\('D:/code/model/ssd_engine/frontend/src/api/'\\)\\)\")",
+      "Bash(python -c \"import os; print\\(os.listdir\\('D:/code/model/ssd_engine/frontend/src/api/'\\)\\)\")",
+      "Bash(node -e \"const fs=require\\('fs'\\);console.log\\(fs.readdirSync\\('D:/code/model/ssd_engine/frontend/src/api/'\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(powershell.exe *)",
+      "Bash(node *)",
+      "Bash(where node *)",
+      "Bash(where python3 *)",
+      "Bash(where python *)",
+      "Bash(/usr/bin/cat D:/code/model/ssd_engine/backend/app/utils/time.py)",
+      "Bash(/bin/cat D:/code/model/ssd_engine/backend/app/utils/time.py)",
+      "Bash(/usr/bin/cat *)",
+      "Bash(/bin/grep *)",
+      "Bash(findstr /s /n \"useTaskStore\" *.ts *.tsx *.js *.jsx *.vue)",
+      "Bash(findstr /s /n \"taskStore\" *.ts *.tsx *.js *.jsx *.vue)",
+      "Bash(findstr /s /n \"stores/taskStore\" *.ts *.tsx *.js *.jsx *.vue)",
+      "Bash(/usr/bin/find *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(echo *)",
+      "Bash(D:\\\\tools\\\\Git\\\\cmd\\\\git.exe *)",
+      "Bash(\"D:\\\\tools\\\\Git\\\\cmd\\\\git.exe\" -C \"D:/code/model/ssd_engine\" grep -rn \"TODO\\\\|FIXME\\\\|HACK\\\\|PLACEHOLDER\\\\|XXX\" -- \"backend/app/\")",
+      "Bash(\"D:\\\\tools\\\\Git\\\\cmd\\\\git.exe\" -C \"D:/code/model/ssd_engine\" grep -rn \"pass$\\\\|NotImplemented\\\\|placeholder\" -- \"backend/app/\")"
+    ]
+  }
+}

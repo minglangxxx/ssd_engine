@@ -3,8 +3,14 @@ import { Tag } from 'antd';
 import type { TaskStatus } from '@/types/task';
 import { TASK_STATUS_MAP } from '@/utils/constants';
 
-const TaskStatusBadge: React.FC<{ status: TaskStatus }> = ({ status }) => {
-  const config = TASK_STATUS_MAP[status] || { color: 'default', text: status };
+interface TaskStatusBadgeProps {
+  status: TaskStatus;
+  stale?: boolean;
+}
+
+const TaskStatusBadge: React.FC<TaskStatusBadgeProps> = ({ status, stale }) => {
+  const key = stale && status === 'RUNNING' ? 'RUNNING_STALE' : status;
+  const config = TASK_STATUS_MAP[key] || { color: 'default', text: status };
   return <Tag color={config.color}>{config.text}</Tag>;
 };
 

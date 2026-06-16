@@ -178,6 +178,13 @@ CREATE TABLE IF NOT EXISTS `nvme_smart_data` (
     INDEX idx_smart_device_ip (device_ip)
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- V1: devices 表新增主机信息字段
+CALL add_column_if_missing('devices', 'hostname', 'VARCHAR(64) NULL');
+CALL add_column_if_missing('devices', 'os_version', 'VARCHAR(128) NULL');
+CALL add_column_if_missing('devices', 'kernel_version', 'VARCHAR(128) NULL');
+CALL add_column_if_missing('devices', 'cpu_usage', 'FLOAT NULL');
+CALL add_column_if_missing('devices', 'memory_usage', 'FLOAT NULL');
+
 DROP PROCEDURE IF EXISTS add_column_if_missing;
 DROP PROCEDURE IF EXISTS add_index_if_missing;
 DROP PROCEDURE IF EXISTS add_fk_if_missing;

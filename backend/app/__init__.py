@@ -35,10 +35,33 @@ def create_app() -> Flask:
 
     with app.app_context():
         db.create_all()
+        _ensure_device_columns(db)
 
     _start_scheduler(app)
 
     return app
+
+
+def _ensure_device_columns(db):
+    """V1: auto-add missing host-info columns to devices table."""
+    from sqlalchemy import inspect, text
+    insp = inspect(db.engine)
+    if 'devices' not in insp.get_table_names():
+        return
+    existing = {c['name'] for c in insp.get_columns('devices')}
+    needed = [
+        ('hostname', 'VARCHAR(64)'),
+        ('os_version', 'VARCHAR(128)'),
+        ('kernel_version', 'VARCHAR(128)'),
+        ('cpu_usage', 'FLOAT'),
+        ('memory_usage', 'FLOAT'),
+    ]
+    with db.engine.begin() as conn:
+        for col_name, col_type in needed:
+            if col_name not in existing:
+                conn.execute(text(
+                    f"ALTER TABLE devices ADD COLUMN {col_name} {col_type} NULL"
+                ))
 
 
 def _start_scheduler(app: Flask) -> None:

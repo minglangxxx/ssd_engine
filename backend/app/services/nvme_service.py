@@ -270,9 +270,7 @@ class NvmeService:
                 'detected_at': detected_at,
             })
 
-        # 排序: critical 在前
-        alerts.sort(key=lambda a: (0 if a['severity'] == 'critical' else 1, a['detected_at']), reverse=False)
-        # 重新排序让critical在前，同级别按detected_at倒序
+        # 排序: critical在前，同级别按detected_at正序
         alerts.sort(key=lambda a: (0 if a['severity'] == 'critical' else 1, a['detected_at']))
 
         return alerts
@@ -399,8 +397,7 @@ class NvmeService:
                     continue
                 seen.add(disk_name)
 
-                ctrl_match = re.match(r'^(nvme\d+)', disk_name)
-                controller = ctrl_match.group(1) if ctrl_match else disk_name
+                controller = NvmeService._extract_nvme_controller(disk_name)
 
                 try:
                     id_ctrl = agent.get_nvme_id_ctrl(f'/dev/{controller}')
@@ -448,75 +445,56 @@ class NvmeService:
             agent.close()
 
     @staticmethod
-    def get_nvme_id_ctrl(device_id: int, disk_name: str) -> dict:
+    def _extract_nvme_controller(disk_name: str) -> str:
+        match = re.match(r'^(nvme\d+)', disk_name)
+        return match.group(1) if match else disk_name
+
+    @staticmethod
+    def _run_nvme_cmd(device_id: int, disk_name: str, agent_method: str,
+                      device_path: str, cmd_label: str,
+                      extra_return: dict | None = None, **agent_kwargs) -> dict:
         device = Device.query.get(device_id)
         if device is None:
             raise ApiError('NOT_FOUND', '设备不存在', 404)
 
-        ip, port = device.ip, device.agent_port
-        device_id_val = device.id
-        ctrl_match = re.match(r'^(nvme\d+)', disk_name)
-        controller = ctrl_match.group(1) if ctrl_match else disk_name
-
-        agent = AgentExecutor(f'http://{ip}:{port}')
+        agent = AgentExecutor(f'http://{device.ip}:{device.agent_port}')
         try:
             with db_released():
-                data = agent.get_nvme_id_ctrl(f'/dev/{controller}')
+                fn = getattr(agent, agent_method)
+                data = fn(device_path, **agent_kwargs)
             if not data:
-                raise ApiError('NVME_CMD_FAILED', f'nvme id-ctrl 执行失败: {disk_name}', 502)
-            return {
-                'device_id': device_id_val,
+                raise ApiError('NVME_CMD_FAILED', f'nvme {cmd_label} 执行失败: {disk_name}', 502)
+            result = {
+                'device_id': device.id,
                 'disk_name': disk_name,
                 'data': data,
             }
+            if extra_return:
+                result.update(extra_return)
+            return result
         finally:
             agent.close()
+
+    @staticmethod
+    def get_nvme_id_ctrl(device_id: int, disk_name: str) -> dict:
+        return NvmeService._run_nvme_cmd(
+            device_id, disk_name, 'get_nvme_id_ctrl',
+            f'/dev/{NvmeService._extract_nvme_controller(disk_name)}', 'id-ctrl',
+        )
 
     @staticmethod
     def get_nvme_id_ns(device_id: int, disk_name: str) -> dict:
-        device = Device.query.get(device_id)
-        if device is None:
-            raise ApiError('NOT_FOUND', '设备不存在', 404)
-
-        ip, port = device.ip, device.agent_port
-        device_id_val = device.id
-
-        agent = AgentExecutor(f'http://{ip}:{port}')
-        try:
-            with db_released():
-                data = agent.get_nvme_id_ns(f'/dev/{disk_name}')
-            if not data:
-                raise ApiError('NVME_CMD_FAILED', f'nvme id-ns 执行失败: {disk_name}', 502)
-            return {
-                'device_id': device_id_val,
-                'disk_name': disk_name,
-                'data': data,
-            }
-        finally:
-            agent.close()
+        return NvmeService._run_nvme_cmd(
+            device_id, disk_name, 'get_nvme_id_ns',
+            f'/dev/{disk_name}', 'id-ns',
+        )
 
     @staticmethod
     def get_nvme_error_log(device_id: int, disk_name: str) -> dict:
-        device = Device.query.get(device_id)
-        if device is None:
-            raise ApiError('NOT_FOUND', '设备不存在', 404)
-
-        ip, port = device.ip, device.agent_port
-        device_id_val = device.id
-
-        agent = AgentExecutor(f'http://{ip}:{port}')
-        try:
-            with db_released():
-                data = agent.get_nvme_error_log(f'/dev/{disk_name}')
-            if not data:
-                raise ApiError('NVME_CMD_FAILED', f'nvme error-log 执行失败: {disk_name}', 502)
-            return {
-                'device_id': device_id_val,
-                'disk_name': disk_name,
-                'data': data,
-            }
-        finally:
-            agent.close()
+        return NvmeService._run_nvme_cmd(
+            device_id, disk_name, 'get_nvme_error_log',
+            f'/dev/{disk_name}', 'error-log',
+        )
 
     @staticmethod
     def _format_capacity(bytes_val: int) -> str:
@@ -531,3 +509,20 @@ class NvmeService:
         if idx <= 1:
             return f'{int(val)} {units[idx]}'
         return f'{val:.2f} {units[idx]}'
+
+    @staticmethod
+    def get_nvme_feature(device_id: int, disk_name: str, fid: str = '0x06') -> dict:
+        if not re.match(r'^0x[0-9a-fA-F]{1,4}$', fid):
+            raise ApiError('INVALID_PARAM', f'fid 格式无效: {fid}', 400)
+        return NvmeService._run_nvme_cmd(
+            device_id, disk_name, 'get_nvme_feature',
+            f'/dev/{NvmeService._extract_nvme_controller(disk_name)}', 'get-feature',
+            extra_return={'fid': fid}, fid=fid,
+        )
+
+    @staticmethod
+    def get_nvme_fw_log(device_id: int, disk_name: str) -> dict:
+        return NvmeService._run_nvme_cmd(
+            device_id, disk_name, 'get_nvme_fw_log',
+            f'/dev/{NvmeService._extract_nvme_controller(disk_name)}', 'fw-log',
+        )

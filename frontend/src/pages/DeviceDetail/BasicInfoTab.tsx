@@ -57,6 +57,15 @@ const BasicInfoTab: React.FC<BasicInfoTabProps> = ({ deviceId }) => {
               {deviceInfo.agent_status}
             </Tag>
           </Descriptions.Item>
+          <Descriptions.Item label="主机名">{deviceInfo.hostname || '--'}</Descriptions.Item>
+          <Descriptions.Item label="操作系统">{deviceInfo.os_version || '--'}</Descriptions.Item>
+          <Descriptions.Item label="内核版本">{deviceInfo.kernel_version || '--'}</Descriptions.Item>
+          <Descriptions.Item label="CPU 使用率">
+            {deviceInfo.cpu_usage !== null && deviceInfo.cpu_usage !== undefined ? `${deviceInfo.cpu_usage}%` : '--'}
+          </Descriptions.Item>
+          <Descriptions.Item label="内存使用率">
+            {deviceInfo.memory_usage !== null && deviceInfo.memory_usage !== undefined ? `${deviceInfo.memory_usage}%` : '--'}
+          </Descriptions.Item>
         </Descriptions>
         <Space style={{ marginTop: 12 }}>
           <Button
@@ -75,7 +84,7 @@ const BasicInfoTab: React.FC<BasicInfoTabProps> = ({ deviceId }) => {
             onClick={() =>
               testMutation.mutate({
                 ip: deviceInfo.ip,
-                user: 'root',
+                user: '',
                 password: '',
               })
             }

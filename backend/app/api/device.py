@@ -20,10 +20,7 @@ def create_device():
         raise ApiError('VALIDATION_ERROR', error.errors()[0]['msg'], 400) from error
     
     device = DeviceService.create(payload)
-    
-    # 自动检测 Agent 状态
-    DeviceService.get_agent_status(device.id)
-    
+
     return success_response(device.to_dict(), 201)
 
 
@@ -53,9 +50,10 @@ def test_device_connection():
         payload = DeviceTestConnectionRequest.model_validate(request.get_json(force=True)).model_dump()
     except ValidationError as error:
         raise ApiError('VALIDATION_ERROR', error.errors()[0]['msg'], 400) from error
-    return success_response(DeviceService.test_connection(**payload))
+    return success_response(DeviceService.test_connection(ip=payload['ip'], agent_port=payload['agent_port']))
 
 
 @api_bp.get('/devices/<int:device_id>/agent-status')
 def get_device_agent_status(device_id: int):
+    """读取 Agent 缓存状态（心跳驱动，非即时探测）。如需即时检测请调用 POST /devices/test-connection。"""
     return success_response(DeviceService.get_agent_status(device_id))

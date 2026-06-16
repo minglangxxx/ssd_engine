@@ -56,3 +56,19 @@ def flush_task():
     task_id = int(payload.get('task_id'))
     result = IngestService.flush_task(task_id, payload)
     return success_response(result)
+
+
+@api_bp.post('/internal/ingest/heartbeat')
+def ingest_heartbeat():
+    """Agent 心跳上报"""
+    payload = request.get_json(force=True) or {}
+    result = IngestService.ingest_heartbeat(
+        device_ip=str(payload.get('device_ip') or ''),
+        version=payload.get('version'),
+        hostname=payload.get('hostname'),
+        os_version=payload.get('os_version'),
+        kernel_version=payload.get('kernel_version'),
+        cpu_usage=payload.get('cpu_usage'),
+        memory_usage=payload.get('memory_usage'),
+    )
+    return success_response(result)

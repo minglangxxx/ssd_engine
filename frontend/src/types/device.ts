@@ -13,7 +13,12 @@ export interface Device {
   agent_version: string;
   agent_port: number;
   last_heartbeat: string;
-  disks: string[];
+  hostname?: string | null;
+  os_version?: string | null;
+  kernel_version?: string | null;
+  cpu_usage?: number | null;
+  memory_usage?: number | null;
+  disks?: DeviceDisk[] | string[];
   created_at: string;
   updated_at: string;
 }

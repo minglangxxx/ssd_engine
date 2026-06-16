@@ -30,6 +30,7 @@ const DeviceManage: React.FC = () => {
     queryKey: ['devices'],
     queryFn: () => deviceApi.list(),
     refetchOnMount: 'always',
+    refetchInterval: 30000,
   });
 
   const addMutation = useMutation({
@@ -95,6 +96,38 @@ const DeviceManage: React.FC = () => {
     },
     { title: '版本', dataIndex: 'agent_version', width: 80 },
     {
+      title: '主机名',
+      dataIndex: 'hostname',
+      width: 100,
+      render: (v: string | null) => v || '--',
+    },
+    {
+      title: '操作系统',
+      dataIndex: 'os_version',
+      width: 140,
+      ellipsis: true,
+      render: (v: string | null) => v || '--',
+    },
+    {
+      title: '内核版本',
+      dataIndex: 'kernel_version',
+      width: 120,
+      ellipsis: true,
+      render: (v: string | null) => v || '--',
+    },
+    {
+      title: 'CPU%',
+      dataIndex: 'cpu_usage',
+      width: 70,
+      render: (v: number | null) => (v !== null && v !== undefined ? `${v}%` : '--'),
+    },
+    {
+      title: 'MEM%',
+      dataIndex: 'memory_usage',
+      width: 70,
+      render: (v: number | null) => (v !== null && v !== undefined ? `${v}%` : '--'),
+    },
+    {
       title: '最后心跳',
       dataIndex: 'last_heartbeat',
       width: 160,
@@ -149,6 +182,7 @@ const DeviceManage: React.FC = () => {
         rowKey="id"
         loading={isLoading}
         size="small"
+        scroll={{ x: 1400 }}
       />
 
       <Modal

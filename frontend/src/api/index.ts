@@ -5,3 +5,4 @@ export { analysisApi } from './analysis';
 export { dataApi } from './data';
 export { smartApi } from './smart';
 export { nvmeApi } from './nvme';
+export { dashboardApi } from './dashboard';

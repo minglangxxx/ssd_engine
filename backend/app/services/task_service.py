@@ -103,12 +103,28 @@ class TaskService:
         logger.info(f"Getting status for task {task_id}")
         task = TaskService.get(task_id)
         result = task.result or {}
-        return {
+        response = {
             'id': task.id,
             'status': task.status,
             'error': result.get('error'),
             'result': task.result,
             'updated_at': to_beijing_iso(task.updated_at, assume_utc=True),
+        }
+        if getattr(task, '_agent_offline', False) and task.status == TaskStatus.RUNNING:
+            response['stale'] = True
+        return response
+
+    @staticmethod
+    def get_raw(task_id: int) -> dict:
+        logger.info(f"Getting raw output for task {task_id}")
+        task = Task.query.get(task_id)
+        if not task:
+            raise ApiError('NOT_FOUND', '任务不存在', 404)
+        if not task.raw_output:
+            raise ApiError('NO_RAW', '该任务无原始输出', 404)
+        return {
+            'task_id': task.id,
+            'raw_output': task.raw_output,
         }
 
     @staticmethod
@@ -162,6 +178,7 @@ class TaskService:
 
         FioTrendData.query.filter_by(task_id=task.id).delete()
         task.result = None
+        task.raw_output = None
         task.status = TaskStatus.PENDING
         task.updated_at = datetime.utcnow()
         db.session.commit()
@@ -213,7 +230,9 @@ class TaskService:
             agent.close()
 
         if not agent_online:
-            return Task.query.get(task_id)
+            stale_task = Task.query.get(task_id)
+            stale_task._agent_offline = True
+            return stale_task
 
         try:
             task = Task.query.get(task_id)
@@ -231,6 +250,8 @@ class TaskService:
             if remote_status == 'success':
                 task.status = TaskStatus.SUCCESS
                 task.result = status_payload.get('result') or task.result
+                if 'raw_output' in status_payload:
+                    task.raw_output = status_payload.get('raw_output')
                 task.started_at = TaskService._parse_timestamp(status_payload.get('start_time')) or task.started_at
                 task.finished_at = TaskService._parse_timestamp(status_payload.get('end_time')) or task.finished_at
                 task.data_window_start = task.started_at or task.data_window_start

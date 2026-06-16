@@ -1,14 +1,15 @@
 import React, { useMemo } from 'react';
-import { Modal, Descriptions, Table, Spin, Alert, Empty } from 'antd';
-import { useNvmeDetail } from '@/hooks/useNvme';
-import { useSmartLatest } from '@/hooks/useSmart';
+import { Modal, Descriptions, Table, Spin, Alert, Empty, Tag } from 'antd';
+import { useNvmeDetail, type NvmeDetailType } from '@/hooks/useNvme';
 import type { SmartDiskSnapshot } from '@/types/smart';
+import type { NvmeFeatureResponse, NvmeFwLogResponse } from '@/types/nvme';
 
 interface NvmeDetailModalProps {
   open: boolean;
   deviceId: number;
   diskName: string;
-  type: 'id-ctrl' | 'id-ns' | 'error-log' | 'smart-log';
+  type: NvmeDetailType;
+  fid?: string;
   onClose: () => void;
 }
 
@@ -36,28 +37,27 @@ const NvmeDetailModal: React.FC<NvmeDetailModalProps> = ({
   deviceId,
   diskName,
   type,
+  fid,
   onClose,
 }) => {
-  const { data: idCtrlData, isLoading: idCtrlLoading, error: idCtrlError } = useNvmeDetail(deviceId, diskName, type === 'smart-log' ? null : type);
-  const { data: smartData } = useSmartLatest(deviceId);
+  const { data: nvmeData, isLoading, error } = useNvmeDetail(deviceId, diskName, type, fid);
 
   const smartDisk = useMemo(() => {
-    if (type !== 'smart-log' || !smartData?.disks) return null;
-    return smartData.disks.find((d: SmartDiskSnapshot) => d.disk_name === diskName) || null;
-  }, [smartData, diskName, type]);
+    if (type !== 'smart-log' || !nvmeData?.disks) return null;
+    return nvmeData.disks.find((d: SmartDiskSnapshot) => d.disk_name === diskName) || null;
+  }, [nvmeData, diskName, type]);
 
   const titleMap: Record<string, string> = {
     'id-ctrl': `NVMe ID-CTRL - ${diskName}`,
     'id-ns': `NVMe ID-NS - ${diskName}`,
     'error-log': `NVMe ERROR-LOG - ${diskName}`,
     'smart-log': `NVMe SMART-LOG - ${diskName}`,
+    'get-feature': `NVMe GET-FEATURE - ${diskName}`,
+    'fw-log': `NVMe FW-LOG - ${diskName}`,
   };
 
-  const loading = type === 'smart-log' ? false : idCtrlLoading;
-  const error = type === 'smart-log' ? null : idCtrlError;
-
   const renderIdCtrl = () => {
-    const data = (idCtrlData as { data?: Record<string, unknown> })?.data;
+    const data = (nvmeData as { data?: Record<string, unknown> })?.data;
     if (!data) return <Empty description="无数据" />;
     const topEntries = idCtrlTopKeys
       .filter((k) => data[k.key] !== undefined && data[k.key] !== null && data[k.key] !== '')
@@ -97,23 +97,30 @@ const NvmeDetailModal: React.FC<NvmeDetailModalProps> = ({
     );
   };
 
-  const renderIdNs = () => {
-    const data = (idCtrlData as { data?: Record<string, unknown> })?.data;
-    if (!data) return <Empty description="无数据" />;
-    const lbaf = Array.isArray(data.lbaf) ? data.lbaf : [];
-    const { lbaf: _lbaf, ...rest } = data;
-    const entries = Object.entries(rest).filter(
+  const renderKvDescriptions = (data: Record<string, unknown> | undefined, emptyText: string, column = 2, style?: React.CSSProperties) => {
+    if (!data) return <Empty description={emptyText} />;
+    const entries = Object.entries(data).filter(
       ([, v]) => v !== undefined && v !== null && v !== '',
     );
     return (
+      <Descriptions bordered column={column} size="small" style={style}>
+        {entries.map(([k, v]) => (
+          <Descriptions.Item key={k} label={k}>
+            {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+          </Descriptions.Item>
+        ))}
+      </Descriptions>
+    );
+  };
+
+  const renderIdNs = () => {
+    const data = (nvmeData as { data?: Record<string, unknown> })?.data;
+    if (!data) return <Empty description="无数据" />;
+    const lbaf = Array.isArray(data.lbaf) ? data.lbaf : [];
+    const { lbaf: _lbaf, ...rest } = data;
+    return (
       <>
-        <Descriptions bordered column={2} size="small" style={{ marginBottom: 16 }}>
-          {entries.map(([k, v]) => (
-            <Descriptions.Item key={k} label={k}>
-              {typeof v === 'object' ? JSON.stringify(v) : String(v)}
-            </Descriptions.Item>
-          ))}
-        </Descriptions>
+        {renderKvDescriptions(rest, '无数据', 2, { marginBottom: 16 })}
         {lbaf.length > 0 && (
           <Table
             dataSource={lbaf.map((item: Record<string, unknown>, idx: number) => ({
@@ -138,7 +145,7 @@ const NvmeDetailModal: React.FC<NvmeDetailModalProps> = ({
   };
 
   const renderErrorLog = () => {
-    const data = (idCtrlData as { data?: Record<string, unknown> })?.data;
+    const data = (nvmeData as { data?: Record<string, unknown> })?.data;
     const entries = (data?.error_log_entries || []) as Array<Record<string, unknown>>;
     if (!entries || entries.length === 0) return <Empty description="无错误日志" />;
     const columns = [
@@ -186,14 +193,65 @@ const NvmeDetailModal: React.FC<NvmeDetailModalProps> = ({
     );
   };
 
+  const renderGetFeature = () => {
+    const data = (nvmeData as NvmeFeatureResponse | null)?.data;
+    return renderKvDescriptions(data, '无 Feature 数据');
+  };
+
+  const renderFwLog = () => {
+    const resp = nvmeData as NvmeFwLogResponse | null;
+    const data = resp?.data;
+    if (!data) return <Empty description="无固件日志" />;
+    const activeSlot = Number(data.afi?.active ?? 0) || 0;
+    const frs = Array.isArray(data.frs) ? data.frs.map(String) : [];
+
+    const slots = Array.from({ length: 7 }, (_, i) => {
+      const slotNum = i + 1;
+      const fw = (frs[i] || '').trim();
+      const isActive = slotNum === activeSlot;
+      return { slotNum, fw, isActive };
+    });
+
+    return (
+      <>
+        <Descriptions bordered column={1} size="small" style={{ marginBottom: 16 }}>
+          <Descriptions.Item label="当前激活槽">Slot {activeSlot}</Descriptions.Item>
+        </Descriptions>
+        <Table
+          dataSource={slots}
+          rowKey="slotNum"
+          size="small"
+          pagination={false}
+          columns={[
+            { title: 'Slot', dataIndex: 'slotNum', width: 80 },
+            {
+              title: '固件版本',
+              dataIndex: 'fw',
+              render: (fw: string) => fw || '(空)',
+            },
+            {
+              title: '状态',
+              dataIndex: 'isActive',
+              width: 100,
+              render: (active: boolean) =>
+                active ? <Tag color="green">Active</Tag> : <Tag>空闲</Tag>,
+            },
+          ]}
+        />
+      </>
+    );
+  };
+
   const renderContent = () => {
-    if (loading) return <Spin />;
+    if (isLoading) return <Spin />;
     if (error) return <Alert type="error" message={`请求失败: ${error.message}`} showIcon />;
     switch (type) {
       case 'id-ctrl': return renderIdCtrl();
       case 'id-ns': return renderIdNs();
       case 'error-log': return renderErrorLog();
       case 'smart-log': return renderSmartLog();
+      case 'get-feature': return renderGetFeature();
+      case 'fw-log': return renderFwLog();
       default: return <Empty description="未知类型" />;
     }
   };

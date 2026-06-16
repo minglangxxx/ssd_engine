@@ -14,6 +14,6 @@ class DeviceUpdateRequest(BaseModel):
 
 class DeviceTestConnectionRequest(BaseModel):
     ip: str = Field(..., min_length=1, max_length=50)
-    user: str = Field(..., min_length=1, max_length=64)
-    password: str = Field(..., min_length=1, max_length=255)
+    user: str | None = Field(default=None, max_length=64)
+    password: str | None = Field(default=None, max_length=255)
     agent_port: int = Field(default=8080, ge=1, le=65535)

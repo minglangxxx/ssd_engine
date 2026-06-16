@@ -16,10 +16,15 @@ class Device(db.Model):
     agent_status = db.Column(db.String(20), nullable=False, default='offline')
     agent_version = db.Column(db.String(32), nullable=True)
     last_heartbeat = db.Column(db.DateTime, nullable=True)
+    hostname = db.Column(db.String(64), nullable=True)
+    os_version = db.Column(db.String(128), nullable=True)
+    kernel_version = db.Column(db.String(128), nullable=True)
+    cpu_usage = db.Column(db.Float, nullable=True)
+    memory_usage = db.Column(db.Float, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    def to_dict(self) -> dict:
+    def to_dict(self, include_disks: bool = False) -> dict:
         return {
             'id': self.id,
             'ip': self.ip,
@@ -28,7 +33,12 @@ class Device(db.Model):
             'agent_version': self.agent_version or '',
             'agent_port': self.agent_port,
             'last_heartbeat': to_beijing_iso(self.last_heartbeat, assume_utc=True),
-            'disks': [],
+            'hostname': self.hostname,
+            'os_version': self.os_version,
+            'kernel_version': self.kernel_version,
+            'cpu_usage': self.cpu_usage,
+            'memory_usage': self.memory_usage,
             'created_at': to_beijing_iso(self.created_at, assume_utc=True),
             'updated_at': to_beijing_iso(self.updated_at, assume_utc=True),
+            'disks': [d.to_dict() for d in getattr(self, 'disks', [])] if include_disks else [],
         }
