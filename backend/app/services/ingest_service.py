@@ -346,6 +346,48 @@ class IngestService:
         return task.to_dict()
 
     @staticmethod
+    def ingest_heartbeat(
+        device_ip: str,
+        version: str | None,
+        hostname: str | None,
+        os_version: str | None,
+        kernel_version: str | None,
+        cpu_usage: float | None,
+        memory_usage: float | None,
+    ) -> dict:
+        if not device_ip:
+            raise ApiError('VALIDATION_ERROR', 'device_ip 不能为空', 400)
+
+        device = Device.query.filter_by(ip=device_ip).first()
+        if device is None:
+            raise ApiError('NOT_FOUND', f'设备 {device_ip} 不存在', 404)
+
+        device.agent_status = 'online'
+        device.last_heartbeat = datetime.utcnow()
+        if version is not None:
+            device.agent_version = str(version)
+        if hostname is not None:
+            device.hostname = hostname
+        if os_version is not None:
+            device.os_version = os_version
+        if kernel_version is not None:
+            device.kernel_version = kernel_version
+        if cpu_usage is not None:
+            try:
+                device.cpu_usage = float(cpu_usage)
+            except (TypeError, ValueError):
+                pass
+        if memory_usage is not None:
+            try:
+                device.memory_usage = float(memory_usage)
+            except (TypeError, ValueError):
+                pass
+
+        db.session.commit()
+        logger.info('Heartbeat received from %s', device_ip)
+        return {'status': 'online', 'device_ip': device_ip}
+
+    @staticmethod
     def _get_or_create_record(
         data_type: str,
         device_ip: str,

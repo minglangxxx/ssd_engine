@@ -36,6 +36,9 @@ class BackendIngestClient:
         self.smart_flush_interval = max(1, Config.SMART_INGEST_INTERVAL_SECONDS)
         self.smart_samples: list[dict[str, Any]] = []
         self.smart_last_flush = time.monotonic()
+        self.heartbeat_data: dict[str, Any] | None = None
+        self.heartbeat_last_flush = time.monotonic()
+        self.heartbeat_flush_interval = max(5, Config.HEARTBEAT_INTERVAL_SECONDS)
         if self.enabled:
             logger.info('Backend ingest enabled, backend=%s, device_ip=%s', self.backend_url, self.device_ip)
             threading.Thread(target=self._flush_loop, daemon=True).start()
@@ -165,6 +168,42 @@ class BackendIngestClient:
                     del self.disk_samples[:len(samples)]
                     self.disk_last_flush = time.monotonic()
 
+    def enqueue_heartbeat(self, health_data: dict[str, Any]) -> None:
+        if not self.enabled or not health_data:
+            return
+
+        with self.lock:
+            self.heartbeat_data = dict(health_data)
+            should_flush = self._elapsed(self.heartbeat_last_flush) >= self.heartbeat_flush_interval
+
+        if should_flush:
+            self.flush_heartbeat()
+
+    def flush_heartbeat(self) -> None:
+        if not self.enabled:
+            return
+
+        with self.lock:
+            if not self.heartbeat_data:
+                return
+            data = dict(self.heartbeat_data)
+
+        payload = {
+            'device_ip': self.device_ip,
+            'version': data.get('version'),
+            'hostname': data.get('hostname'),
+            'os_version': data.get('os_version'),
+            'kernel_version': data.get('kernel_version'),
+            'cpu_usage': data.get('cpu_usage'),
+            'memory_usage': data.get('memory_usage'),
+        }
+
+        success = self._post_json('/api/internal/ingest/heartbeat', payload)
+        if success:
+            with self.lock:
+                self.heartbeat_data = None
+                self.heartbeat_last_flush = time.monotonic()
+
     def enqueue_smart_metrics(self, timestamp: float, disk_name: str, smart_data: dict[str, Any]) -> None:
         """将单次 SMART 采集数据入队"""
         if not self.enabled or not smart_data:
@@ -236,6 +275,7 @@ class BackendIngestClient:
                 self.flush_host_metrics()
                 self.flush_disk_metrics()
                 self.flush_smart_metrics()
+                self.flush_heartbeat()
                 task_ids = []
                 with self.lock:
                     for task_id, batch in self.fio_batches.items():

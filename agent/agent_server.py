@@ -118,6 +118,7 @@ def collect_background() -> None:
     logger.info("Starting background monitoring collection")
     smart_last_collect = 0
     smart_collect_interval = Config.SMART_COLLECT_INTERVAL_SECONDS
+    heartbeat_last_send = 0
 
     while True:
         try:
@@ -140,6 +141,19 @@ def collect_background() -> None:
             }
             ingest_client.enqueue_host_metrics(snapshot['timestamp'], host_metrics)
             ingest_client.enqueue_disk_metrics(snapshot['timestamp'], snapshot['disks'])
+
+            # 心跳上报（每 HEARTBEAT_INTERVAL_SECONDS 发送一次）
+            if now - heartbeat_last_send >= Config.HEARTBEAT_INTERVAL_SECONDS:
+                heartbeat_last_send = now
+                heartbeat_data = {
+                    'version': Config.VERSION,
+                    'hostname': snapshot['system'].get('hostname', ''),
+                    'os_version': snapshot['system'].get('os_version', ''),
+                    'kernel_version': snapshot['system'].get('kernel_version', ''),
+                    'cpu_usage': snapshot['cpu'].get('cpu_usage_percent'),
+                    'memory_usage': snapshot['memory'].get('mem_usage_percent'),
+                }
+                ingest_client.enqueue_heartbeat(heartbeat_data)
 
             # SMART 周期采集（每 60 秒）
             if now - smart_last_collect >= smart_collect_interval:

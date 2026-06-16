@@ -1,88 +1,27 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.extensions import db
 from app.models.device import Device
-from app.executors.agent_executor import AgentExecutor
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 CHECK_INTERVAL_SECONDS = 30
-MAX_WORKERS = 10
+OFFLINE_THRESHOLD_SECONDS = 90
 
 
 def check_all_agents():
-    """Background task: concurrently check all device agent statuses and update DB."""
+    """定时扫描：将超过阈值未心跳的设备标为 offline"""
     from flask import current_app
 
     with current_app.app_context():
-        devices = Device.query.all()
-        if not devices:
-            return
-
-        # 提取设备信息后立即释放 DB 连接
-        device_info = [(d.id, d.ip, d.agent_port) for d in devices]
+        threshold = datetime.utcnow() - timedelta(seconds=OFFLINE_THRESHOLD_SECONDS)
+        updated = Device.query.filter(
+            Device.agent_status == 'online',
+            Device.last_heartbeat < threshold,
+        ).update(
+            {'agent_status': 'offline', 'cpu_usage': None, 'memory_usage': None}
+        )
         db.session.commit()
-
-        # 并发 HTTP 检测（不占用 DB 连接）
-        results = _check_devices_concurrently(device_info)
-
-        # 重新获取 DB 连接更新结果
-        for device_id, result in results.items():
-            device = Device.query.get(device_id)
-            if device is None:
-                continue
-            device.agent_status = result['status']
-            device.agent_version = result['version']
-            if result['status'] == 'online':
-                device.last_heartbeat = datetime.utcnow()
-                device.hostname = result.get('hostname')
-                device.os_version = result.get('os_version')
-                device.kernel_version = result.get('kernel_version')
-                device.cpu_usage = result.get('cpu_usage')
-                device.memory_usage = result.get('memory_usage')
-            else:
-                device.cpu_usage = None
-                device.memory_usage = None
-
-        db.session.commit()
-        logger.info("Agent status check completed: %d devices updated", len(results))
-
-
-def _check_devices_concurrently(device_info: list[tuple]) -> dict[int, dict]:
-    results: dict[int, dict] = {}
-
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {
-            executor.submit(_check_single_device, ip, port): device_id
-            for device_id, ip, port in device_info
-        }
-        for future in as_completed(futures):
-            device_id = futures[future]
-            try:
-                results[device_id] = future.result()
-            except Exception as error:
-                logger.warning("Check failed for device %s: %s", device_id, error)
-                results[device_id] = {'status': 'offline', 'version': ''}
-
-    return results
-
-
-def _check_single_device(ip: str, agent_port: int) -> dict:
-    agent = AgentExecutor(f'http://{ip}:{agent_port}')
-    try:
-        health = agent.get_health()
-        return {
-            'status': 'online',
-            'version': health.get('version', ''),
-            'hostname': health.get('hostname'),
-            'os_version': health.get('os_version'),
-            'kernel_version': health.get('kernel_version'),
-            'cpu_usage': health.get('cpu_usage'),
-            'memory_usage': health.get('memory_usage'),
-        }
-    except Exception:
-        return {'status': 'offline', 'version': ''}
-    finally:
-        agent.close()
+        if updated > 0:
+            logger.info('Marked %d devices offline (heartbeat timeout)', updated)

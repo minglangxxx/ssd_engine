@@ -21,5 +21,5 @@ export const deviceApi = {
     request.post<unknown, { success: boolean; message: string }>('/devices/test-connection', params),
 
   getAgentStatus: (id: number) =>
-    request.get<unknown, { status: string; version: string }>(`/devices/${id}/agent-status`),
+    request.get<unknown, { status: string; version: string; last_heartbeat: string }>(`/devices/${id}/agent-status`),
 };

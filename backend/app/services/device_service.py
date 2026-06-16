@@ -72,7 +72,7 @@ class DeviceService:
         logger.info(f"Device {device.ip} deleted successfully")
 
     @staticmethod
-    def get_agent(device_or_ip, agent_port: int | None = None) -> AgentExecutor:
+    def get_agent(device_or_ip,agent_port: int | None = None) -> AgentExecutor:
         if isinstance(device_or_ip, Device):
             ip = device_or_ip.ip
             port = device_or_ip.agent_port
@@ -144,37 +144,15 @@ class DeviceService:
 
     @staticmethod
     def get_agent_status(device_id: int) -> dict:
+        """读取 Agent 缓存状态（由心跳上报驱动，非即时探测）。
+
+        返回的 agent_status 依赖 Agent 每 30 秒 POST 心跳 + 服务端 90 秒超时判定，
+        不再主动调用 Agent /health 接口。如需即时探测请走 test_connection。
+        """
         logger.info(f"Getting agent status for device ID: {device_id}")
         device = DeviceService.get(device_id)
-        ip, port = device.ip, device.agent_port
-        agent = DeviceService.get_agent(ip, port)
-        try:
-            with db_released():
-                health = agent.get_health()
-                online = True
-                version = health.get('version', '')
-        except Exception:
-            online = False
-            version = ''
-            health = {}
-        finally:
-            agent.close()
-        try:
-            device = Device.query.get(device_id)
-            device.agent_status = 'online' if online else 'offline'
-            device.agent_version = version
-            if online:
-                device.last_heartbeat = datetime.utcnow()
-                device.hostname = health.get('hostname')
-                device.os_version = health.get('os_version')
-                device.kernel_version = health.get('kernel_version')
-                device.cpu_usage = health.get('cpu_usage')
-                device.memory_usage = health.get('memory_usage')
-            else:
-                device.cpu_usage = None
-                device.memory_usage = None
-            db.session.commit()
-            return {'status': device.agent_status, 'version': device.agent_version or ''}
-        except Exception:
-            db.session.rollback()
-            raise
+        return {
+            'status': device.agent_status,
+            'version': device.agent_version or '',
+            'last_heartbeat': device.to_dict().get('last_heartbeat'),
+        }
