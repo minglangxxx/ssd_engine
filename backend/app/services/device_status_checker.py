@@ -37,6 +37,14 @@ def check_all_agents():
             device.agent_version = result['version']
             if result['status'] == 'online':
                 device.last_heartbeat = datetime.utcnow()
+                device.hostname = result.get('hostname')
+                device.os_version = result.get('os_version')
+                device.kernel_version = result.get('kernel_version')
+                device.cpu_usage = result.get('cpu_usage')
+                device.memory_usage = result.get('memory_usage')
+            else:
+                device.cpu_usage = None
+                device.memory_usage = None
 
         db.session.commit()
         logger.info("Agent status check completed: %d devices updated", len(results))
@@ -64,10 +72,16 @@ def _check_devices_concurrently(device_info: list[tuple]) -> dict[int, dict]:
 def _check_single_device(ip: str, agent_port: int) -> dict:
     agent = AgentExecutor(f'http://{ip}:{agent_port}')
     try:
-        if agent.test_connection():
-            health = agent.get_health()
-            return {'status': 'online', 'version': health.get('version', '')}
-        return {'status': 'offline', 'version': ''}
+        health = agent.get_health()
+        return {
+            'status': 'online',
+            'version': health.get('version', ''),
+            'hostname': health.get('hostname'),
+            'os_version': health.get('os_version'),
+            'kernel_version': health.get('kernel_version'),
+            'cpu_usage': health.get('cpu_usage'),
+            'memory_usage': health.get('memory_usage'),
+        }
     except Exception:
         return {'status': 'offline', 'version': ''}
     finally:

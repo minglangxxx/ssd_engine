@@ -53,7 +53,7 @@ def test_device_connection():
         payload = DeviceTestConnectionRequest.model_validate(request.get_json(force=True)).model_dump()
     except ValidationError as error:
         raise ApiError('VALIDATION_ERROR', error.errors()[0]['msg'], 400) from error
-    return success_response(DeviceService.test_connection(**payload))
+    return success_response(DeviceService.test_connection(ip=payload['ip'], agent_port=payload['agent_port']))
 
 
 @api_bp.get('/devices/<int:device_id>/agent-status')

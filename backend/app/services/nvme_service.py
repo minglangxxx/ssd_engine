@@ -270,9 +270,7 @@ class NvmeService:
                 'detected_at': detected_at,
             })
 
-        # 排序: critical 在前
-        alerts.sort(key=lambda a: (0 if a['severity'] == 'critical' else 1, a['detected_at']), reverse=False)
-        # 重新排序让critical在前，同级别按detected_at倒序
+        # 排序: critical在前，同级别按detected_at正序
         alerts.sort(key=lambda a: (0 if a['severity'] == 'critical' else 1, a['detected_at']))
 
         return alerts

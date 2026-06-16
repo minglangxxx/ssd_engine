@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Table, Button, Empty, Space, Tag } from 'antd';
-import { useNvmeList } from '@/hooks/useNvme';
+import { useNvmeList, type NvmeDetailType } from '@/hooks/useNvme';
 import NvmeDetailModal from './NvmeDetailModal';
 import type { NvmeDeviceInfo } from '@/types/nvme';
 
@@ -14,7 +14,7 @@ const NvmeListTab: React.FC<NvmeListTabProps> = ({ deviceId }) => {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedDisk, setSelectedDisk] = useState('');
-  const [modalType, setModalType] = useState<'id-ctrl' | 'id-ns' | 'smart-log' | 'error-log'>('id-ctrl');
+  const [modalType, setModalType] = useState<NvmeDetailType>('id-ctrl');
 
   const openModal = (diskName: string, type: typeof modalType) => {
     setSelectedDisk(diskName);

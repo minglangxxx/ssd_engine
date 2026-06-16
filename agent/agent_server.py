@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import re
 import subprocess
 import threading
 import time
-import re
 from collections import deque
 from datetime import datetime
 
@@ -182,7 +183,27 @@ def run_command(command: str, timeout: int = 300) -> dict:
 @app.get('/health')
 def health():
     logger.debug("Health check endpoint called")
-    return jsonify({'status': 'healthy', 'version': Config.VERSION})
+    try:
+        system = system_collector.collect()
+    except Exception:
+        system = {}
+    try:
+        cpu = cpu_collector.collect()
+    except Exception:
+        cpu = {}
+    try:
+        memory = memory_collector.collect()
+    except Exception:
+        memory = {}
+    return jsonify({
+        'status': 'healthy',
+        'version': Config.VERSION,
+        'hostname': system.get('hostname', ''),
+        'os_version': system.get('os_version', ''),
+        'kernel_version': system.get('kernel_version', ''),
+        'cpu_usage': cpu.get('cpu_usage_percent'),
+        'memory_usage': memory.get('mem_usage_percent'),
+    })
 
 
 @app.post('/execute')
@@ -325,6 +346,27 @@ def smart(device: str):
     smart_data = smart_collector.collect(normalized_device)
     logger.info(f"SMART data collected for device: {normalized_device}")
     return jsonify(smart_data)
+
+
+@app.get('/nvme/<path:device>/get-feature')
+def nvme_get_feature(device: str):
+    normalized = _normalize_smart_device_path(device)
+    fid = request.args.get('fid', '0x06')
+    result = run_command(f'nvme get-feature {normalized} -f {fid} -o json', timeout=15)
+    try:
+        return jsonify(json.loads(result['stdout']))
+    except (json.JSONDecodeError, KeyError):
+        return jsonify({'error': result.get('stderr', 'command failed')}), 502
+
+
+@app.get('/nvme/<path:device>/fw-log')
+def nvme_fw_log(device: str):
+    normalized = _normalize_smart_device_path(device)
+    result = run_command(f'nvme fw-log {normalized} -o json', timeout=15)
+    try:
+        return jsonify(json.loads(result['stdout']))
+    except (json.JSONDecodeError, KeyError):
+        return jsonify({'error': result.get('stderr', 'command failed')}), 502
 
 
 if __name__ == '__main__':

@@ -1,14 +1,13 @@
 import React, { useMemo } from 'react';
 import { Modal, Descriptions, Table, Spin, Alert, Empty } from 'antd';
-import { useNvmeDetail } from '@/hooks/useNvme';
-import { useSmartLatest } from '@/hooks/useSmart';
+import { useNvmeDetail, type NvmeDetailType } from '@/hooks/useNvme';
 import type { SmartDiskSnapshot } from '@/types/smart';
 
 interface NvmeDetailModalProps {
   open: boolean;
   deviceId: number;
   diskName: string;
-  type: 'id-ctrl' | 'id-ns' | 'error-log' | 'smart-log';
+  type: NvmeDetailType;
   onClose: () => void;
 }
 
@@ -38,13 +37,12 @@ const NvmeDetailModal: React.FC<NvmeDetailModalProps> = ({
   type,
   onClose,
 }) => {
-  const { data: idCtrlData, isLoading: idCtrlLoading, error: idCtrlError } = useNvmeDetail(deviceId, diskName, type === 'smart-log' ? null : type);
-  const { data: smartData } = useSmartLatest(deviceId);
+  const { data: nvmeData, isLoading, error } = useNvmeDetail(deviceId, diskName, type);
 
   const smartDisk = useMemo(() => {
-    if (type !== 'smart-log' || !smartData?.disks) return null;
-    return smartData.disks.find((d: SmartDiskSnapshot) => d.disk_name === diskName) || null;
-  }, [smartData, diskName, type]);
+    if (type !== 'smart-log' || !nvmeData?.disks) return null;
+    return nvmeData.disks.find((d: SmartDiskSnapshot) => d.disk_name === diskName) || null;
+  }, [nvmeData, diskName, type]);
 
   const titleMap: Record<string, string> = {
     'id-ctrl': `NVMe ID-CTRL - ${diskName}`,
@@ -53,11 +51,11 @@ const NvmeDetailModal: React.FC<NvmeDetailModalProps> = ({
     'smart-log': `NVMe SMART-LOG - ${diskName}`,
   };
 
-  const loading = type === 'smart-log' ? false : idCtrlLoading;
-  const error = type === 'smart-log' ? null : idCtrlError;
+  const loading = isLoading;
+  const queryError = error;
 
   const renderIdCtrl = () => {
-    const data = (idCtrlData as { data?: Record<string, unknown> })?.data;
+    const data = (nvmeData as { data?: Record<string, unknown> })?.data;
     if (!data) return <Empty description="无数据" />;
     const topEntries = idCtrlTopKeys
       .filter((k) => data[k.key] !== undefined && data[k.key] !== null && data[k.key] !== '')
@@ -98,7 +96,7 @@ const NvmeDetailModal: React.FC<NvmeDetailModalProps> = ({
   };
 
   const renderIdNs = () => {
-    const data = (idCtrlData as { data?: Record<string, unknown> })?.data;
+    const data = (nvmeData as { data?: Record<string, unknown> })?.data;
     if (!data) return <Empty description="无数据" />;
     const lbaf = Array.isArray(data.lbaf) ? data.lbaf : [];
     const { lbaf: _lbaf, ...rest } = data;
@@ -138,7 +136,7 @@ const NvmeDetailModal: React.FC<NvmeDetailModalProps> = ({
   };
 
   const renderErrorLog = () => {
-    const data = (idCtrlData as { data?: Record<string, unknown> })?.data;
+    const data = (nvmeData as { data?: Record<string, unknown> })?.data;
     const entries = (data?.error_log_entries || []) as Array<Record<string, unknown>>;
     if (!entries || entries.length === 0) return <Empty description="无错误日志" />;
     const columns = [
@@ -188,7 +186,7 @@ const NvmeDetailModal: React.FC<NvmeDetailModalProps> = ({
 
   const renderContent = () => {
     if (loading) return <Spin />;
-    if (error) return <Alert type="error" message={`请求失败: ${error.message}`} showIcon />;
+    if (queryError) return <Alert type="error" message={`请求失败: ${queryError.message}`} showIcon />;
     switch (type) {
       case 'id-ctrl': return renderIdCtrl();
       case 'id-ns': return renderIdNs();

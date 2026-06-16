@@ -17,14 +17,8 @@ export const deviceApi = {
   getInfo: (id: number) =>
     request.get<unknown, DeviceInfo>(`/devices/${id}/info`),
 
-  testConnection: (params: { ip: string; user: string; password: string }) => {
-    // 如果密码为空，则设置默认值
-    const updatedParams = {
-      ...params,
-      password: params.password || '123456'
-    };
-    return request.post<unknown, { success: boolean; message: string }>('/devices/test-connection', updatedParams);
-  },
+  testConnection: (params: { ip: string; user?: string; password?: string }) =>
+    request.post<unknown, { success: boolean; message: string }>('/devices/test-connection', params),
 
   getAgentStatus: (id: number) =>
     request.get<unknown, { status: string; version: string }>(`/devices/${id}/agent-status`),
