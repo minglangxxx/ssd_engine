@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -60,6 +61,22 @@ class FakeChat:
 class FakeOpenAI:
     def __init__(self, **_kwargs):
         self.chat = FakeChat()
+
+
+class FakeSlowChatCompletions:
+    def create(self, **kwargs):
+        import openai
+        raise openai.APITimeoutError(request=type('Request', (), {'method': 'POST'})())
+
+
+class FakeSlowChat:
+    def __init__(self):
+        self.completions = FakeSlowChatCompletions()
+
+
+class FakeSlowOpenAI:
+    def __init__(self, **_kwargs):
+        self.chat = FakeSlowChat()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -237,9 +254,16 @@ def main():
             'window_before_seconds': 20,
             'window_after_seconds': 15,
         })
-        assert create_analysis_resp.status_code == 200, create_analysis_resp.data
+        assert create_analysis_resp.status_code == 202, create_analysis_resp.data
         created_analysis = create_analysis_resp.get_json()
-        assert created_analysis['status'] == 'completed', created_analysis
+        assert created_analysis['status'] == 'analyzing', created_analysis
+        for _ in range(20):
+            time.sleep(0.5)
+            ar = client.get(f"/api/tasks/{task_data['id']}/ai-analysis")
+            body = ar.get_json()
+            if body.get('status') in ('completed', 'failed'):
+                break
+        assert body['status'] == 'completed', body
         assert STATE['history_requests'], STATE
         assert any(item['path'] == '/monitor/host/history' for item in STATE['history_requests']), STATE['history_requests']
         assert any(item['path'] == '/monitor/disk/nvme0n1/history' for item in STATE['history_requests']), STATE['history_requests']
@@ -296,10 +320,50 @@ def main():
         assert retry_status['status'] == 'SUCCESS', retry_status
         assert retry_status['result']['iops'] == 4321, retry_status
 
+        # --- P-3a: Dashboard API Tests ---
+        print('\n--- Dashboard API Tests ---')
+        dashboard_resp = client.get('/api/dashboard/summary')
+        assert dashboard_resp.status_code == 200, dashboard_resp.data
+        dashboard_data = dashboard_resp.get_json()
+        assert dashboard_data['agents']['total'] >= 1, f"expected >=1 agent, got {dashboard_data['agents']['total']}"
+        assert dashboard_data['tasks']['total'] >= 1, f"expected >=1 task, got {dashboard_data['tasks']['total']}"
+        assert len(dashboard_data.get('recent_tasks', [])) > 0, "recent_tasks should not be empty"
+        assert len(dashboard_data.get('chart_data', [])) > 0, "chart_data should not be empty"
+        print('✓ Dashboard summary API OK')
+
+        # --- P-3b: AI Timeout Test ---
+        print('\n--- AI Timeout Test ---')
+        import app.services.analysis_service as _amod
+        _OrigOpenAI = _amod.OpenAI
+        _amod.OpenAI = FakeSlowOpenAI
+
+        try:
+            timeout_analysis_resp = client.post(f"/api/tasks/{task_data['id']}/ai-analysis", json={
+                'include_fio': True,
+                'include_host_monitor': True,
+                'include_disk_monitor': True,
+                'window_before_seconds': 20,
+                'window_after_seconds': 15,
+            })
+            assert timeout_analysis_resp.status_code == 202, timeout_analysis_resp.data
+
+            for _ in range(20):
+                time.sleep(0.5)
+                ar = client.get(f"/api/tasks/{task_data['id']}/ai-analysis")
+                timeout_body = ar.get_json()
+                if timeout_body.get('status') in ('completed', 'failed'):
+                    break
+
+            assert timeout_body['status'] == 'failed', f"expected failed, got {timeout_body['status']}"
+            assert '超时' in (timeout_body.get('error') or ''), f"error should mention timeout: {timeout_body.get('error')}"
+            print('✓ AI timeout scenario OK')
+        finally:
+            _amod.OpenAI = _OrigOpenAI
+
         print(json.dumps({
             'device': device_resp.get_json(),
             'task': get_data,
-            'analysis': created_analysis,
+            'analysis': body,
             'trend': trend_data,
             'list': list_data,
             'stop_task': stopped_task,

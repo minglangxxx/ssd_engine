@@ -9,6 +9,7 @@ from pathlib import Path
 
 from flask import current_app
 from openai import OpenAI
+import openai
 
 from app.config import Config
 from app.extensions import db
@@ -35,7 +36,12 @@ class AnalysisService:
     def __init__(self):
         if not Config.AI_API_KEY:
             raise ApiError('VALIDATION_ERROR', '未配置 AI_API_KEY', 400)
-        self.client = OpenAI(api_key=Config.AI_API_KEY, base_url=Config.AI_BASE_URL)
+        self._timeout = max(10, Config.AI_TIMEOUT)
+        self.client = OpenAI(
+            api_key=Config.AI_API_KEY,
+            base_url=Config.AI_BASE_URL,
+            timeout=self._timeout,
+        )
         self.model = Config.AI_MODEL
 
     def analyze(
@@ -194,6 +200,7 @@ class AnalysisService:
                     ],
                     temperature=0.3,
                     max_tokens=4096,
+                    timeout=self._timeout,
                 )
             try:
                 analysis = AiAnalysis.query.get(analysis_id)
@@ -210,6 +217,14 @@ class AnalysisService:
             except Exception:
                 db.session.rollback()
                 raise
+            return analysis
+        except openai.APITimeoutError as error:
+            db.session.rollback()
+            analysis = AiAnalysis.query.get(analysis_id)
+            if analysis:
+                analysis.status = 'failed'
+                analysis.error = f'AI 分析超时（{self._timeout}s）'
+                db.session.commit()
             return analysis
         except Exception as error:
             db.session.rollback()
