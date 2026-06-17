@@ -1,6 +1,6 @@
 # SSD Engine V2 需求进度文档
 
-> 日期：2026-06-16 | 分支：feature_v2 | 详设文档：`docs/plan/v2-detailed-design.md`
+> 日期：2026-06-17 | 分支：feature_v2 | 详设文档：`docs/plan/v2-detailed-design.md`
 
 ---
 
@@ -19,18 +19,21 @@
 
 | # | 任务 | 来源 | 工作量 | 状态 | 备注 |
 |---|------|------|--------|------|------|
-| P-1 | AI 调用增加显式超时配置 | V1-功能4 | 0.5d | 📋 待开发 | OpenAI SDK timeout 参数 |
-| P-2 | AI 前端轮询增加最大等待时长 | V1-功能4 | 0.5d | 📋 待开发 | 避免无限轮询 |
-| P-3 | 补充 verify_integration 测试 | V1-功能4 | 0.5d | 📋 待开发 | Dashboard 接口、AI 超时场景 |
-| P-4 | 修复 POST AI 分析状态码断言 | V1-功能4 | 0.1d | 📋 待开发 | 200 → 202 |
-| P-5 | Agent 列表页轮询 30s→10s | V1-功能1 | 0.1d | 📋 待开发 | |
-| P-6 | Feature 管道修复（Service+API） | V2.5-功能5 | 1d | 📋 待开发 | 详设见 v2-prerequisites-design.md P-7 |
-| P-7 | FW Slot 管道修复（Service+API） | V2.5-功能6 | 1d | 📋 待开发 | 详设见 v2-prerequisites-design.md P-7 |
-| P-8 | Task.result 增加 lat_p99 | V2 前置 | 1d | 📋 待开发 | 详设见 v2-prerequisites-design.md P-8 |
-| P-9 | Task.result 增加 raw_json | V2 前置 | 0.5d | 📋 待开发 | 详设见 v2-prerequisites-design.md P-9 |
-| P-10 | testConnection 硬编码密码移除 | 安全 | 0.5d | 📋 待开发 | |
+| P-1 | AI 调用增加显式超时配置 | V1-功能4 | 0.5d | 🔧 开发中 | 已编码，详设见 v1-prerequisites-detailed-design.md §1；实现要点：Config.AI_TIMEOUT(默认120s)，self._timeout=max(10,AI_TIMEOUT)，OpenAI(timeout=)+create(timeout=)，except APITimeoutError→failed+'超时' |
+| P-2 | AI 前端轮询增加最大等待时长 | V1-功能4 | 0.5d | 🔧 开发中 | 已编码，详设见 v1-prerequisites-detailed-design.md §2；实现要点：usePolling扩展maxWaitMs+onTimeout(均useRef保存)，enabled=!pollingTimedOut&&status==='analyzing'，AI_POLL_MAX_WAIT_MS=5min，超时Alert+重试按钮 |
+| P-3 | 补充 verify_integration 测试 | V1-功能4 | 0.5d | 🔧 开发中 | 已编码，详设见 v1-prerequisites-detailed-design.md §3；实现要点：P-3a Dashboard API断言，P-3b FakeSlowOpenAI模拟APITimeoutError |
+| P-4 | 修复 POST AI 分析状态码断言 | V1-功能4 | 0.1d | 🔧 开发中 | 已编码，详设见 v1-prerequisites-detailed-design.md §4；实现要点：200→202，status=='completed'→轮询等待终态 |
+| P-5 | Agent 列表页轮询 30s→10s | V1-功能1 | 0.1d | 🔧 开发中 | 已编码，详设见 v1-prerequisites-detailed-design.md §5；实现要点：refetchInterval 30000→10000 |
+| P-6 | Feature 管道修复（Service+API） | V2.5-功能5 | 1d | ✅ 已完成 | commit 6c4fc48 |
+| P-7 | FW Slot 管道修复（Service+API） | V2.5-功能6 | 1d | ✅ 已完成 | commit 6c4fc48 |
+| P-8 | Task.result 增加 lat_p99 | V2 前置 | 1d | ✅ 已完成 | commit 6c4fc48 |
+| P-9 | Task.result 增加 raw_json | V2 前置 | 0.5d | ✅ 已完成 | 实现为 raw_output (commit 6c4fc48) |
+| P-10 | testConnection 硬编码密码移除 | 安全 | 0.5d | ✅ 已完成 | 已确认无硬编码密码 |
+| P-11 | Agent 心跳架构从 Server-Pull 改为 Agent-Push | 运维 | 1d | ✅ 已完成 | commit 2f14e05 |
+| P-12 | APScheduler check_all_agents 包裹 app.app_context() | 运维 | 0.2d | ✅ 已完成 | commit 6844635 |
+| P-13 | NVMe 分区磁盘名端到端归一化 | 监控 | 1d | ✅ 已完成 | commit 1a47537；设计原则已补入两份计划文档 |
 
-**V1 收尾进度：0/10（0%）**
+**V1 收尾进度：8/13（62%）**
 
 ---
 
@@ -154,24 +157,27 @@
 
 | 模块 | 子任务数 | 已完成 | 进度 |
 |------|---------|--------|------|
-| V1 收尾 | 10 | 0 | 0% |
+| V1 收尾 | 13 | 8 | 62% |
 | 基线管理 | 10 | 0 | 0% |
 | 回归测试 | 9 | 0 | 0% |
 | 多盘并发 | 15 | 0 | 0% |
 | SNIA 测试 | 13 | 0 | 0% |
 | 固件验证 | 12 | 0 | 0% |
-| **V2 总计** | **69** | **0** | **0%** |
+| **V2 总计** | **72** | **8** | **11%** |
 
 ---
 
 ## 依赖关系图
 
 ```
-P-8 (lat_p99) ──────→ RG-1 (回归计算需要 p99)
+P-8 (lat_p99) ✅ ───→ RG-1 (回归计算需要 p99)
     │
     └──────→ SN-2,3,4 (SNIA 流水线需要完整 result)
 
-P-7 (FW Log 管道) ──→ FW-1 (读取 fw_before/fw_after)
+P-7 (FW Log 管道) ✅ ──→ FW-1 (读取 fw_before/fw_after)
+
+P-1 (AI超时) 🔧 ──→ FW-4 (AI升级建议需超时保障)
+P-2 (前端轮询超时) 🔧 ──→ FW-4 (前端需超时兜底)
 
 BL-1 (基线创建) ───→ RG-1 (回归比对需要基线)
     │
@@ -180,6 +186,9 @@ BL-1 (基线创建) ───→ RG-1 (回归比对需要基线)
 RG-1 (回归执行) ───→ FW-3 (固件测试复用回归比对)
 
 GT-3 (聚合逻辑) ───→ IngestService 修改 (flush_task 回调)
+
+P-11 (心跳 Agent-Push) ✅ ──→ 设备在线状态实时性保障
+P-13 (磁盘名归一化) ✅ ──→ 磁盘监控数据端到端可用
 ```
 
 **推荐开发顺序**：
@@ -196,12 +205,15 @@ GT-3 (聚合逻辑) ───→ IngestService 修改 (flush_task 回调)
 
 | 模块 | 后端(天) | 前端(天) | 联调(天) | 总计(天) |
 |------|---------|---------|---------|---------|
-| V1 收尾 | 3.2 | 1.3 | 1.5 | 6.0 |
+| V1 收尾（剩余） | 1.1 | 1.3 | 1.0 | 3.4 |
+| V1 运维修复（已完成） | 3.4 | 0 | 0 | 3.4 |
 | 基线管理 | 1.9 | 2.6 | 0.5 | 5.0 |
 | 回归测试 | 2.7 | 2.1 | 0.5 | 5.3 |
 | 多盘并发 | 4.3 | 3.8 | 1.0 | 9.1 |
 | SNIA 测试 | 5.0 | 3.6 | 1.0 | 9.6 |
 | 固件验证 | 4.5 | 3.6 | 1.0 | 9.1 |
-| **总计** | **21.6** | **17.0** | **5.5** | **44.1** |
+| **总计** | **22.9** | **17.0** | **5.0** | **44.9** |
 
-> 按 1 人全职开发估算，约需 9 周（含联调）。后端前端可并行开发时，约 6~7 周。
+> V1 运维修复（P-11~P-13）已消耗 3.4 天后端工时，不占用后续开发排期。
+> V1 收尾剩余项：P-1(0.5d) + P-2(0.5d) + P-3(0.1d) + P-4(0.1d) + P-5(0.1d) ≈ 后端 1.1d。
+> 按 1 人全职开发估算，剩余约 8 周（含联调）。后端前端可并行开发时，约 6 周。

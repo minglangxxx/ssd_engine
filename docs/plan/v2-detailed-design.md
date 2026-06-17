@@ -1,6 +1,6 @@
 # SSD Engine V2 需求详设文档
 
-> 版本：v2.0 | 日期：2026-06-16 | 分支：feature_v2
+> 版本：v2.1 | 日期：2026-06-17 | 分支：feature_v2
 
 ---
 
@@ -75,6 +75,120 @@ Linux 内核 `/proc/diskstats` 中分区条目缺失时间统计字段（字段1
 **Why:** 业内 iostat / node_exporter / Telegraf / Netdata 均遵循此设计。分区级 I/O 指标导致延迟/利用率恒为 0，数据无意义且与整盘指标重复。
 
 **How to apply:** 所有新增模块涉及磁盘 I/O 数据的，`disk_name` 字段一律使用整盘名。空间类监控（如文件系统容量）才使用分区挂载点。
+
+---
+
+## 0.5 V1 收尾 P-1~P-5 实现记录
+
+> 详设文档：`docs/plan/v1-prerequisites-detailed-design.md` | 本节记录实现与详设的偏差及补充
+
+### 0.5.1 P-1：AI 调用增加显式超时配置
+
+**已编码文件**：`backend/app/config.py`，`backend/app/services/analysis_service.py`
+
+**与详设偏差**：
+
+| 详设方案 | 实际实现 | 偏差原因 |
+|---------|---------|---------|
+| `Config.AI_TIMEOUT` 直接用于 OpenAI() 和 create() | 引入 `self._timeout = max(10, Config.AI_TIMEOUT)` 实例属性 | `max(10, ...)` 计算结果需在 `__init__` 和 `_execute_analysis` 两处引用；若用局部变量则 `_execute_analysis` 无法访问，若每次 `max(10, Config.AI_TIMEOUT)` 则重复计算且错误消息秒数与实际超时不一致 |
+| error 消息 `f'AI 分析超时（{Config.AI_TIMEOUT}s）'` | `f'AI 分析超时（{self._timeout}s）'` | 保证错误消息与实际超时值一致；当用户配置 AI_TIMEOUT=5 时，实际超时 10s，消息也显示 10s |
+
+**实现要点**：
+
+```python
+# config.py
+AI_TIMEOUT = int(os.getenv('AI_TIMEOUT', '120'))  # 秒，默认 120s
+
+# analysis_service.py
+class AnalysisService:
+    def __init__(self):
+        self._timeout = max(10, Config.AI_TIMEOUT)
+        self.client = OpenAI(..., timeout=self._timeout)
+
+    def _execute_analysis(self, ...):
+        # 客户端级 + 请求级双重 timeout
+        completion = self.client.chat.completions.create(
+            ..., timeout=self._timeout
+        )
+        # except 链：APITimeoutError 先于 Exception
+        except openai.APITimeoutError:
+            analysis.error = f'AI 分析超时（{self._timeout}s）'
+```
+
+### 0.5.2 P-2：AI 前端轮询增加最大等待时长
+
+**已编码文件**：`frontend/src/hooks/usePolling.ts`，`frontend/src/components/AiAnalysisPanel/index.tsx`
+
+**与详设偏差**：
+
+| 详设方案 | 实际实现 | 偏差原因 |
+|---------|---------|---------|
+| `onTimeout` 直接放入 useEffect 依赖数组 | `onTimeout` 用 `useRef` 保存，从依赖数组移除 | 原方案中 `onTimeout` 为内联箭头函数，每次 re-render 生成新引用 → useEffect 重建 → `start=Date.now()` 重置 → `maxWaitMs` 永远到不了。用 `useRef` 保存后，回调仍被调用但不触发 effect 重建 |
+| `enabled: analysisResult?.status === 'analyzing'` | `enabled: !pollingTimedOut && analysisResult?.status === 'analyzing'` | 原方案中点击"重试"按钮仅调用 `setPollingTimedOut(false); refetch()`，但 `enabled` 仍为 true（status 未变），effect 不重建，`timedOutRef` 保持 true，轮询不恢复。加入 `!pollingTimedOut` 条件后，超时时 enabled 变 false → effect cleanup 重置 timedOutRef；重试时 enabled 从 false→true → effect 重建，轮询恢复 |
+
+**实现要点**：
+
+```typescript
+// usePolling.ts
+const savedOnTimeout = useRef(onTimeout);
+savedOnTimeout.current = onTimeout;  // ref 永远指向最新回调
+// useEffect 依赖：[interval, enabled, maxWaitMs]，不含 onTimeout
+
+// AiAnalysisPanel/index.tsx
+usePolling({
+  enabled: !pollingTimedOut && analysisResult?.status === 'analyzing',
+  maxWaitMs: AI_POLL_MAX_WAIT_MS,  // 5 * 60 * 1000
+  onTimeout: () => setPollingTimedOut(true),
+});
+
+// 超时重试：setPollingTimedOut(false) → enabled false→true → effect 重建
+```
+
+### 0.5.3 P-3 + P-4：补充集成测试 + 修复断言
+
+**已编码文件**：`backend/verify_integration.py`
+
+**与详设偏差**：
+
+| 详设方案 | 实际实现 | 偏差原因 |
+|---------|---------|---------|
+| P-3b 轮询变量使用 `body` | 改用 `timeout_body` | P-4 修复后 P-3b 复用了同名变量 `body`，覆盖了 P-4 正常分析的轮询结果，导致末尾 `json.dumps` 中 `'analysis': body` 输出超时测试的 body 而非正常完成的 |
+
+**P-3a 新增 Dashboard API 测试用例**：
+
+| 用例 | 步骤 | 预期 |
+|------|------|------|
+| GET /api/dashboard/summary 有数据 | 1. 已有 1 台设备 + 多个任务<br>2. GET /api/dashboard/summary | 200，agents.total≥1，tasks.total≥1，recent_tasks 非空，chart_data 非空 |
+
+**P-3b 新增 AI 超时测试用例**：
+
+| 用例 | 步骤 | 预期 |
+|------|------|------|
+| AI 超时 → status=failed | 1. monkey-patch FakeSlowOpenAI<br>2. POST /api/tasks/{id}/ai-analysis → 202<br>3. 轮询等待终态<br>4. GET /api/tasks/{id}/ai-analysis | status='failed'，error 含'超时' |
+
+**P-4 修复内容**：
+- 断言 `status_code == 200` → `202`
+- 断言 `status == 'completed'` → 轮询等待终态后断言
+
+**FakeSlowOpenAI 实现要点**：
+
+```python
+class FakeSlowChatCompletions:
+    def create(self, **kwargs):
+        import openai
+        raise openai.APITimeoutError(
+            request=type('Request', (), {'method': 'POST'})()
+        )
+```
+
+- `APITimeoutError.__init__` 签名为 `(self, request: httpx.Request)`，FakeSlowOpenAI 传入兼容的类型对象
+- monkey-patch 在 `try/finally` 中包裹，确保还原
+
+### 0.5.5 P-5：Agent 列表页轮询 30s→10s
+
+**已编码文件**：`frontend/src/pages/DeviceManage/index.tsx`
+
+无偏差，仅将 `refetchInterval: 30000` 改为 `refetchInterval: 10000`。
 
 ---
 
