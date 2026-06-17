@@ -34,7 +34,6 @@ const NvmeListTab: React.FC<NvmeListTabProps> = ({ deviceId }) => {
 
   const [validationOpen, setValidationOpen] = useState(false);
   const [validationDisk, setValidationDisk] = useState('');
-  const [validationDisk, setValidationDisk] = useState('');
   const [validationTestType, setValidationTestType] = useState<'identify' | 'namespace' | 'smart' | 'error_log' | 'feature' | 'fw_slot'>('identify');
 
   const openModal = (diskName: string, type: typeof modalType) => {

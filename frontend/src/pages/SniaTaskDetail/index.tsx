@@ -36,6 +36,18 @@ const SniaTaskDetail: React.FC = () => {
   const taskId = Number(id);
   const { data: task, isLoading } = useSniaTaskDetail(taskId);
 
+  const iopsTestMatrix = useMemo(() => {
+    const iopsTestResults = (task?.result as { iops_test_results?: { bs: string; pattern: string; iops: number; bw: number }[] } | null)?.iops_test_results || [];
+    const bss = [...new Set(iopsTestResults.map((r) => r.bs))];
+    const patterns = [...new Set(iopsTestResults.map((r) => r.pattern))];
+    const map: Record<string, Record<string, { iops: number; bw: number }>> = {};
+    for (const r of iopsTestResults) {
+      if (!map[r.bs]) map[r.bs] = {};
+      map[r.bs][r.pattern] = { iops: r.iops, bw: r.bw };
+    }
+    return { bss, patterns, map };
+  }, [task]);
+
   if (isLoading || !task) {
     return <Card loading={isLoading}>加载中...</Card>;
   }
@@ -57,17 +69,6 @@ const SniaTaskDetail: React.FC = () => {
 
   const steadyWindowEnd = task.is_steady ? task.current_round - 1 : null;
   const steadyWindowStart = steadyWindowEnd != null ? Math.max(0, steadyWindowEnd - window + 1) : null;
-
-  const iopsTestMatrix = useMemo(() => {
-    const bss = [...new Set(iopsTestResults.map((r) => r.bs))];
-    const patterns = [...new Set(iopsTestResults.map((r) => r.pattern))];
-    const map: Record<string, Record<string, { iops: number; bw: number }>> = {};
-    for (const r of iopsTestResults) {
-      if (!map[r.bs]) map[r.bs] = {};
-      map[r.bs][r.pattern] = { iops: r.iops, bw: r.bw };
-    }
-    return { bss, patterns, map };
-  }, [iopsTestResults]);
 
   return (
     <div>

@@ -1,6 +1,6 @@
 # Agent
 
-Agent 是部署在被测机器上的轻量服务。它负责三件事：执行 fio、采集主机与磁盘指标、采集 NVMe SMART，并通过 HTTP 接口供 Backend 调用。
+Agent 是部署在被测机器上的轻量服务。它负责四件事：执行 fio、采集主机与磁盘指标、采集 NVMe SMART、执行 NVMe 命令，并通过 HTTP 接口供 Backend 调用。
 
 ## 目录结构
 
@@ -43,6 +43,10 @@ agent_server.py 启动时会拉起一个守护线程，每秒采集一次：
 
 采样结果先写入内存中的 MonitorRingBuffer（默认容量 3600 秒），用于历史查询；如果配置了 BACKEND_URL，则同时批量上报到 Backend。
 
+### 心跳上报
+
+Agent 按 HEARTBEAT_INTERVAL_SECONDS 周期（默认 30 秒）向 Backend 发送心跳，Backend 据此判断 Agent 是否在线。
+
 ### SMART 周期采集
 
 后台线程还会按 SMART_COLLECT_INTERVAL_SECONDS 周期扫描 NVMe 盘并采集 SMART 数据，再通过 ingest_client 推送给 Backend。
@@ -71,6 +75,17 @@ FioRunner 负责：
 - 停止任务
 - 向 Backend 周期上报趋势数据
 
+### NVMe 命令执行
+
+NvmeCollector 支持以下 NVMe 命令：
+
+- `id-ctrl`：读取 NVMe identify controller 信息
+- `id-ns`：读取 NVMe identify namespace 信息
+- `error-log`：读取 NVMe 错误日志
+- `error-log-verify`：交叉验证（两次采集比对 SMART 计数器单调性 + 缓冲区一致性）
+- `get-feature`：读取 NVMe feature（默认 0x06）
+- `fw-log`：读取 NVMe 固件日志
+
 ### 并发控制
 
 - MonitorRingBuffer 使用 threading.Lock 保证线程安全
@@ -83,7 +98,7 @@ FioRunner 负责：
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /health | 健康检查，返回 status 和 version |
+| GET | /health | 健康检查，返回 status/version/hostname/cpu/memory |
 | POST | /execute | 执行命令，主要用于调试或补充诊断 |
 
 ### FIO 接口
@@ -111,6 +126,17 @@ FioRunner 负责：
 |------|------|------|
 | GET | /smart/<path:device> | 读取指定设备路径的 SMART 信息 |
 
+### NVMe 命令接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /nvme/<device>/id-ctrl | NVMe identify controller |
+| GET | /nvme/<device>/id-ns | NVMe identify namespace |
+| GET | /nvme/<device>/error-log | NVMe 错误日志 |
+| GET | /nvme/<device>/get-feature | NVMe feature 读取（默认 0x06） |
+| GET | /nvme/<device>/fw-log | NVMe 固件日志 |
+| POST | /nvme/<device>/error-log-verify | NVMe 错误日志交叉验证（两次采集比对） |
+
 ## 配置
 
 config.py 会先尝试读取 agent/.env，再回退到系统环境变量。
@@ -130,6 +156,7 @@ config.py 会先尝试读取 agent/.env，再回退到系统环境变量。
 | INGEST_BATCH_SIZE | 20 | 批量上报阈值 |
 | SMART_COLLECT_INTERVAL_SECONDS | 60 | SMART 采集周期 |
 | SMART_INGEST_INTERVAL_SECONDS | 60 | SMART 上报周期 |
+| HEARTBEAT_INTERVAL_SECONDS | 30 | 心跳上报周期 |
 | MONITOR_RING_BUFFER_SIZE | 3600 | 监控数据环形缓冲区容量（秒） |
 
 参考配置见 .env.example。
@@ -150,7 +177,7 @@ python agent_server.py
 - Flask
 - psutil
 - fio（需提前安装）
-- nvme-cli（SMART 采集需要）
+- nvme-cli（SMART 和 NVMe 命令采集需要）
 
 如果需要在 Linux 上打包单文件可执行程序，可使用：
 
@@ -166,5 +193,6 @@ chmod +x build.sh
 
 - Backend 通过设备表中的 agent_port 访问 Agent，不应假定所有 Agent 都是 8080
 - Agent 的监控和趋势上报走 Backend 的 /api/internal/ingest/* 接口
+- Agent 每 30 秒向 Backend 发送心跳，Backend 据此判断 Agent 在线状态
 - 如果 BACKEND_URL 未配置，Agent 仍可独立提供本地查询接口，但数据不会持久化到平台侧
 - Agent 与 Backend 之间通过 HTTP 通信，Agent 作为服务端，Backend 作为客户端主动调用

@@ -10,7 +10,7 @@ import {
   SwapOutlined,
   ClusterOutlined,
   ExperimentOutlined,
-  UpgradeOutlined,
+  ToolOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useUiStore } from '@/stores/uiStore';
@@ -34,7 +34,7 @@ const menuItems = [
   { key: '/regressions', icon: <SwapOutlined />, label: '回归测试' },
   { key: '/group-tasks', icon: <ClusterOutlined />, label: '多盘并发' },
   { key: '/snia-tasks', icon: <ExperimentOutlined />, label: 'SNIA 测试' },
-  { key: '/fw-tests', icon: <UpgradeOutlined />, label: '固件验证' },
+  { key: '/fw-tests', icon: <ToolOutlined />, label: '固件验证' },
   { key: '/data', icon: <DatabaseOutlined />, label: '数据管理' },
 ];
 

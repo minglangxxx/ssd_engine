@@ -40,44 +40,7 @@ const RegressionDetail: React.FC = () => {
   const { data: regression, isLoading } = useRegressionDetail(regressionId);
   const { data: baseline } = useBaselineDetail(regression?.baseline_id ?? 0);
 
-  const baselineName = baseline?.name || `#${regression?.baseline_id ?? ''}`;
-
-  if (isLoading || !regression) {
-    return <Card loading={isLoading}>加载中...</Card>;
-  }
-
-  const metrics = regression.detail?.metrics || [];
-
-  const columns = [
-    {
-      title: '指标',
-      dataIndex: 'display_name',
-      width: 120,
-    },
-    {
-      title: '基线值',
-      dataIndex: 'baseline',
-      width: 120,
-      render: (v: number, r: RegressionMetric) => `${v} ${r.unit}`,
-    },
-    {
-      title: '当前值',
-      dataIndex: 'current',
-      width: 120,
-      render: (v: number, r: RegressionMetric) => `${v} ${r.unit}`,
-    },
-    {
-      title: '差异',
-      dataIndex: 'diff_pct',
-      width: 120,
-      render: (v: number, r: RegressionMetric) => (
-        <Space>
-          <span>{v > 0 ? '+' : ''}{v}%</span>
-          <Tag color={verdictColor[r.verdict]}>{r.verdict}</Tag>
-        </Space>
-      ),
-    },
-  ];
+  const metrics = regression?.detail?.metrics || [];
 
   const trendChartOption = useMemo(() => {
     if (!metrics.length) return {};
@@ -118,6 +81,43 @@ const RegressionDetail: React.FC = () => {
       ],
     };
   }, [metrics]);
+
+  const baselineName = baseline?.name || `#${regression?.baseline_id ?? ''}`;
+
+  if (isLoading || !regression) {
+    return <Card loading={isLoading}>加载中...</Card>;
+  }
+
+  const columns = [
+    {
+      title: '指标',
+      dataIndex: 'display_name',
+      width: 120,
+    },
+    {
+      title: '基线值',
+      dataIndex: 'baseline',
+      width: 120,
+      render: (v: number, r: RegressionMetric) => `${v} ${r.unit}`,
+    },
+    {
+      title: '当前值',
+      dataIndex: 'current',
+      width: 120,
+      render: (v: number, r: RegressionMetric) => `${v} ${r.unit}`,
+    },
+    {
+      title: '差异',
+      dataIndex: 'diff_pct',
+      width: 120,
+      render: (v: number, r: RegressionMetric) => (
+        <Space>
+          <span>{v > 0 ? '+' : ''}{v}%</span>
+          <Tag color={verdictColor[r.verdict]}>{r.verdict}</Tag>
+        </Space>
+      ),
+    },
+  ];
 
   return (
     <div>
