@@ -127,7 +127,7 @@ class MonitorService:
         agent = MonitorService.get_agent(host)
         try:
             with db_released():
-                result = agent.get_disk_monitor(disk_name)
+                result = agent.get_disk_monitor(query_disk)
             return [result]
         except requests.RequestException as e:
             current_app.logger.warning('Agent %s 离线，磁盘指标降级返回空: %s', host, e)

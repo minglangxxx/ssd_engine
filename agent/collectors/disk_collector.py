@@ -32,13 +32,13 @@ class DiskCollector:
         current_disk = current.get(lookup_name)
         if current_disk is None:
             logger.warning('Disk metrics requested for unknown disk: %s (lookup: %s)', disk_name, lookup_name)
-            return {'disk_name': disk_name}
+            return {'disk_name': lookup_name}
 
         previous_disk = previous.get(lookup_name) or current_disk
         read_ios = current_disk.read_count - previous_disk.read_count
         write_ios = current_disk.write_count - previous_disk.write_count
         return {
-            'disk_name': disk_name,
+            'disk_name': lookup_name,
             'timestamp': now,
             'disk_iops_read': read_ios / delta,
             'disk_iops_write': write_ios / delta,
@@ -59,13 +59,14 @@ class DiskCollector:
             disks: list[dict] = []
             seen: set[str] = set()
             for part in psutil.disk_partitions(all=False):
-                name = part.device.split('/')[-1]
+                name = _base_disk_name(part.device.split('/')[-1])
                 if name in seen:
                     continue
                 seen.add(name)
-                disks.append({'name': name, 'device': part.device, 'mountpoint': part.mountpoint, 'fstype': part.fstype})
+                disks.append({'name': name, 'device': f'/dev/{name}', 'mountpoint': part.mountpoint, 'fstype': part.fstype})
             for name in psutil.disk_io_counters(perdisk=True).keys():
                 if name not in seen:
+                    seen.add(name)
                     disks.append({'name': name, 'device': f'/dev/{name}', 'mountpoint': '', 'fstype': ''})
             return disks
         except Exception:
@@ -90,7 +91,7 @@ class DiskCollector:
         now = time.time()
         delta = max(now - self.prev_time, 0.001)
         metrics = {
-            disk['name']: self._build_metrics(disk['name'], current, self.prev, now, delta)
+            _base_disk_name(disk['name']): self._build_metrics(disk['name'], current, self.prev, now, delta)
             for disk in self.list_disks()
         }
         self.prev = current
