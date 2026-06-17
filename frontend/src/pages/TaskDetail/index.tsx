@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Row, Col, Statistic, Descriptions, Button, Tag, Space } from 'antd';
-import { ArrowLeftOutlined } from '@ant-design/icons';
+import { Card, Row, Col, Statistic, Descriptions, Button, Tag, Space, Modal, Input, message } from 'antd';
+import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons';
 import { useTaskDetail } from '@/hooks/useTask';
 import { usePolling } from '@/hooks/usePolling';
+import { useCreateBaseline } from '@/hooks/useBaseline';
 import TaskStatusBadge from '@/components/TaskStatusBadge/index';
 import FioTrendSection from './FioTrendSection';
 import AiAnalysisSection from '@/components/AiAnalysisPanel/index';
@@ -17,7 +18,29 @@ const TaskDetail: React.FC = () => {
   const { data: task, isLoading, refetch } = useTaskDetail(taskId);
   const isRunning = task?.status === 'RUNNING';
 
+  const [baselineModalVisible, setBaselineModalVisible] = useState(false);
+  const [baselineForm, setBaselineForm] = useState({ name: '', device_model: '', firmware: '' });
+  const { mutate: createBaseline, isPending: creatingBaseline } = useCreateBaseline();
+
   usePolling({ fn: () => refetch(), enabled: isRunning, interval: 3000 });
+
+  const handleCreateBaseline = () => {
+    if (!baselineForm.name.trim()) {
+      message.warning('请输入基线名称');
+      return;
+    }
+    createBaseline(
+      { task_id: taskId, name: baselineForm.name.trim(), device_model: baselineForm.device_model.trim() || undefined, firmware: baselineForm.firmware.trim() || undefined },
+      {
+        onSuccess: (baseline) => {
+          message.success('基线创建成功');
+          setBaselineModalVisible(false);
+          setBaselineForm({ name: '', device_model: '', firmware: '' });
+          navigate(`/baselines/${baseline.id}`);
+        },
+      },
+    );
+  };
 
   if (isLoading || !task) {
     return <Card loading={isLoading}>加载中...</Card>;
@@ -36,7 +59,23 @@ const TaskDetail: React.FC = () => {
           </Button>
           <h2 style={{ margin: 0 }}>任务详情 - {task.name}</h2>
         </Space>
-        <TaskStatusBadge status={task.status} stale={task.stale} />
+        <Space>
+          <TaskStatusBadge status={task.status} stale={task.stale} />
+          {task.status === 'SUCCESS' && (
+            <Button
+              type="primary"
+              icon={<SaveOutlined />}
+              onClick={() => setBaselineModalVisible(true)}
+            >
+              设为基线
+            </Button>
+          )}
+          {task.status === 'SUCCESS' && (
+            <Button onClick={() => navigate('/regressions', { state: { taskId } })}>
+              回归比对
+            </Button>
+          )}
+        </Space>
       </div>
 
       {/* 基本信息 */}
@@ -126,6 +165,43 @@ const TaskDetail: React.FC = () => {
       {task.status !== 'PENDING' && (
         <AiAnalysisSection taskId={taskId} status={task.status} />
       )}
+
+      {/* 设为基线 Modal */}
+      <Modal
+        title="设为基线"
+        open={baselineModalVisible}
+        onOk={handleCreateBaseline}
+        onCancel={() => setBaselineModalVisible(false)}
+        confirmLoading={creatingBaseline}
+        okText="确认创建"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <div style={{ marginBottom: 4 }}>基线名称 <span style={{ color: '#ff4d4f' }}>*</span></div>
+            <Input
+              placeholder="例如：NVMe-A100 初始基线"
+              value={baselineForm.name}
+              onChange={(e) => setBaselineForm((f) => ({ ...f, name: e.target.value }))}
+            />
+          </div>
+          <div>
+            <div style={{ marginBottom: 4 }}>设备型号</div>
+            <Input
+              placeholder="例如：Samsung 980 Pro"
+              value={baselineForm.device_model}
+              onChange={(e) => setBaselineForm((f) => ({ ...f, device_model: e.target.value }))}
+            />
+          </div>
+          <div>
+            <div style={{ marginBottom: 4 }}>固件版本</div>
+            <Input
+              placeholder="例如：5B2QGXA7"
+              value={baselineForm.firmware}
+              onChange={(e) => setBaselineForm((f) => ({ ...f, firmware: e.target.value }))}
+            />
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

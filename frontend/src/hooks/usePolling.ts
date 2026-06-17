@@ -25,10 +25,14 @@ export const usePolling = ({ fn, interval, enabled, maxWaitMs, onTimeout }: Poll
     const start = Date.now();
 
     const timer = setInterval(() => {
-      if (timedOutRef.current) return;
+      if (timedOutRef.current) {
+        clearInterval(timer);
+        return;
+      }
       savedFn.current();
       if (maxWaitMs && Date.now() - start >= maxWaitMs) {
         timedOutRef.current = true;
+        clearInterval(timer);
         savedOnTimeout.current?.();
       }
     }, interval);

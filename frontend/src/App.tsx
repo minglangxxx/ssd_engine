@@ -11,6 +11,16 @@ import MonitorDisk from '@/pages/MonitorDisk/index';
 import DeviceManage from '@/pages/DeviceManage/index';
 import DeviceDetail from '@/pages/DeviceDetail/index';
 import DataManage from '@/pages/DataManage/index';
+import BaselineList from '@/pages/BaselineList/index';
+import BaselineDetail from '@/pages/BaselineDetail/index';
+import RegressionList from '@/pages/RegressionList/index';
+import RegressionDetail from '@/pages/RegressionDetail/index';
+import GroupTaskList from '@/pages/GroupTaskList/index';
+import GroupTaskDetail from '@/pages/GroupTaskDetail/index';
+import SniaTaskList from '@/pages/SniaTaskList/index';
+import SniaTaskDetail from '@/pages/SniaTaskDetail/index';
+import FwTestList from '@/pages/FwTestList/index';
+import FwTestDetail from '@/pages/FwTestDetail/index';
 
 const App: React.FC = () => {
   return (
@@ -26,6 +36,16 @@ const App: React.FC = () => {
             <Route path="/devices" element={<DeviceManage />} />
             <Route path="/devices/:id" element={<DeviceDetail />} />
             <Route path="/data" element={<DataManage />} />
+            <Route path="/baselines" element={<BaselineList />} />
+            <Route path="/baselines/:id" element={<BaselineDetail />} />
+            <Route path="/regressions" element={<RegressionList />} />
+            <Route path="/regressions/:id" element={<RegressionDetail />} />
+            <Route path="/group-tasks" element={<GroupTaskList />} />
+            <Route path="/group-tasks/:id" element={<GroupTaskDetail />} />
+            <Route path="/snia-tasks" element={<SniaTaskList />} />
+            <Route path="/snia-tasks/:id" element={<SniaTaskDetail />} />
+            <Route path="/fw-tests" element={<FwTestList />} />
+            <Route path="/fw-tests/:id" element={<FwTestDetail />} />
           </Route>
         </Routes>
       </BrowserRouter>

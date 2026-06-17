@@ -19,6 +19,9 @@ from app.services.monitor_service import MonitorService
 from app.services.task_service import TaskService
 from app.utils.db import db_released
 from app.utils.helpers import ApiError
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 MAX_CONTEXT_POINTS = 120
@@ -155,21 +158,32 @@ class AnalysisService:
         include_disk_monitor: bool,
     ) -> None:
         with app.app_context():
-            service = cls()
-            analysis = AiAnalysis.query.get(analysis_id)
-            task = Task.query.get(task_id)
-            if analysis is None or task is None:
-                return
+            try:
+                service = cls()
+                analysis = AiAnalysis.query.get(analysis_id)
+                task = Task.query.get(task_id)
+                if analysis is None or task is None:
+                    return
 
-            service._execute_analysis(
-                task,
-                analysis,
-                execution_window,
-                include_fio,
-                include_host_monitor,
-                include_disk_monitor,
-            )
-            db.session.remove()
+                service._execute_analysis(
+                    task,
+                    analysis,
+                    execution_window,
+                    include_fio,
+                    include_host_monitor,
+                    include_disk_monitor,
+                )
+            except Exception:
+                try:
+                    analysis = AiAnalysis.query.get(analysis_id)
+                    if analysis and analysis.status == 'analyzing':
+                        analysis.status = 'failed'
+                        analysis.error = '分析过程发生未预期异常'
+                        db.session.commit()
+                except Exception:
+                    logger.exception('Failed to mark analysis %d as failed', analysis_id)
+            finally:
+                db.session.remove()
 
     def _execute_analysis(
         self,

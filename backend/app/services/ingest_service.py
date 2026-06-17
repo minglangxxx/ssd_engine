@@ -101,12 +101,16 @@ class IngestService:
 
         inserted_count = 0
         grouped_windows: dict[tuple[str, str], dict] = {}
+        grouped_samples: dict[tuple[str, str], list[dict]] = {}
 
         for sample in samples:
             disk_name = str(sample.get('disk_name') or '').strip()
             event_time = IngestService._parse_timestamp(sample.get('event_time') or sample.get('timestamp'))
             if not disk_name or event_time is None:
                 continue
+
+            day_key = event_time.strftime('%Y%m%d')
+            grouped_samples.setdefault((disk_name, day_key), []).append(sample)
 
             task_id = sample.get('task_id')
             db.session.add(DiskMonitorSample(
@@ -131,7 +135,6 @@ class IngestService:
             ))
             inserted_count += 1
 
-            day_key = event_time.strftime('%Y%m%d')
             group_key = (disk_name, day_key)
             window = grouped_windows.setdefault(group_key, {
                 'start': event_time,
@@ -154,8 +157,7 @@ class IngestService:
             record.hot_table_name = 'disk_monitor_samples'
             record.storage_backend = 'mysql'
             record.storage_format = 'table'
-            # 计算 checksum
-            checksum = IngestService._compute_checksum(samples)
+            checksum = IngestService._compute_checksum(grouped_samples.get((disk_name, _day_key), []))
             record.checksum = checksum
 
         db.session.commit()
@@ -226,6 +228,7 @@ class IngestService:
 
         inserted_count = 0
         grouped_windows: dict[tuple[str, str], dict] = {}
+        grouped_samples: dict[tuple[str, str], list[dict]] = {}
 
         for sample in samples:
             disk_name = str(sample.get('disk_name') or '').strip()
@@ -237,6 +240,9 @@ class IngestService:
             if normalized_sample is None:
                 logger.warning('Skipping invalid NVMe SMART sample for device %s disk %s: %s', device_ip, disk_name, sample)
                 continue
+
+            day_key = event_time.strftime('%Y%m%d')
+            grouped_samples.setdefault((disk_name, day_key), []).append(sample)
 
             db.session.add(NvmeSmartData(
                 device_ip=device_ip,
@@ -255,7 +261,6 @@ class IngestService:
             ))
             inserted_count += 1
 
-            day_key = event_time.strftime('%Y%m%d')
             group_key = (disk_name, day_key)
             window = grouped_windows.setdefault(group_key, {
                 'start': event_time,
@@ -278,7 +283,7 @@ class IngestService:
             record.hot_table_name = 'nvme_smart_data'
             record.storage_backend = 'mysql'
             record.storage_format = 'table'
-            checksum = IngestService._compute_checksum(samples)
+            checksum = IngestService._compute_checksum(grouped_samples.get((disk_name, _day_key), []))
             record.checksum = checksum
 
         db.session.commit()
@@ -345,6 +350,14 @@ class IngestService:
             task.status = str(payload.get('status'))
 
         db.session.commit()
+
+        if task.is_sub_task and task.group_task_id:
+            try:
+                from app.services.group_task_service import GroupTaskService
+                GroupTaskService.try_aggregate(task.group_task_id)
+            except Exception:
+                logger.exception('Failed to aggregate GroupTask %d', task.group_task_id)
+
         return task.to_dict()
 
     @staticmethod

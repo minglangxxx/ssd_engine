@@ -13,7 +13,7 @@
 | 层级 | 技术栈 |
 |------|--------|
 | 前端 | React, TypeScript, Ant Design, React Query, ECharts |
-| 后端 | Flask, SQLAlchemy, MySQL, Redis, Celery |
+| 后端 | Flask, SQLAlchemy, MySQL, APScheduler + threading |
 | Agent | Python, fio, nvme-cli, smartctl, iostat |
 | AI能力 | OpenAI Compatible API, DeepSeek, Qwen |
 
@@ -304,9 +304,14 @@ ALTER TABLE task ADD COLUMN ai_status ENUM('none','generating','done','failed') 
 
 ---
 
-# V2 性能验证体系（第5~10周）
+# V2 性能验证体系（第5~10周）✅ 核心已完成
 
 目标：形成完整的 SSD 性能验证闭环，支持基线管理、回归检测、多盘并发、SNIA 标准测试和固件升级验证。
+
+> **实现状态**：V2 五大模块核心功能全部完成（97%），3 轮代码审查 29 项修复已合入。
+> 剩余延后项：FW-4 AI升级建议（1d）、FW-6 固件槽可视化（1d），标记 P1 待排期。
+> 关键实现偏差：详设中规划 Celery chord/chain 调度，实际采用 threading + daemon thread + commit-before-start 模式。
+> 详见 `docs/plan/v2-detailed-design.md` §3.4/§4.4/§5.4 及 `docs/plan/v2-progress.md`。
 
 ---
 
@@ -324,7 +329,10 @@ CREATE TABLE baseline (
   device_model VARCHAR(128),
   firmware     VARCHAR(64),
   fio_config   JSON NOT NULL,
-  result       JSON NOT NULL,   -- iops / bw / lat_ns 等
+  result       JSON NOT NULL,   -- iops / bw / lat_us 等
+  source_task_id INT,           -- 溯源来源任务（实现新增，详设未规划）
+  device_ip    VARCHAR(50),     -- 来源设备IP（实现新增）
+  device_path  VARCHAR(255),    -- 来源设备路径（实现新增）
   created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
   created_by   VARCHAR(64)
 );
@@ -333,10 +341,10 @@ CREATE TABLE baseline (
 ### 接口设计
 
 ```
-POST /api/baseline/create           # 从已完成的 task 创建 baseline
-GET  /api/baseline/list             # 基线列表
-GET  /api/baseline/<id>             # 基线详情
-DELETE /api/baseline/<id>           # 删除基线
+POST /api/baselines           # 从已完成的 task 创建 baseline
+GET  /api/baselines           # 基线列表（keyword模糊搜索+device_model精确匹配+分页）
+GET  /api/baselines/<id>      # 基线详情
+DELETE /api/baselines/<id>    # 删除基线（有回归引用时返回409）
 ```
 
 创建请求体：
@@ -351,9 +359,9 @@ DELETE /api/baseline/<id>           # 删除基线
 
 ### 开发步骤
 
-1. **Week 5 Day 1** — 建 `baseline` 表，实现 CRUD 接口
-2. **Week 5 Day 2** — 前端：任务详情页增加「设为 Baseline」按钮，点击后弹出填写 device_model / firmware 的表单
-3. **Week 5 Day 3** — 基线列表页（表格：名称 / 型号 / 固件 / IOPS / 创建时间）
+1. ~~**Week 5 Day 1** — 建 `baseline` 表，实现 CRUD 接口~~ ✅ 已完成
+2. ~~**Week 5 Day 2** — 前端：任务详情页增加「设为 Baseline」按钮~~ ✅ 已完成
+3. ~~**Week 5 Day 3** — 基线列表页~~ ✅ 已完成
 
 ---
 
@@ -393,10 +401,10 @@ CREATE TABLE regression_result (
   baseline_id  INT NOT NULL,
   iops_diff    FLOAT,
   bw_diff      FLOAT,
-  lat_diff     FLOAT,
-  p99_diff     FLOAT,
+  lat_mean_diff FLOAT,
+  lat_p99_diff  FLOAT,            -- P99 延迟差异（实现新增，详设仅有 lat_diff）
   verdict      ENUM('PASS','WARNING','FAIL'),
-  detail       JSON,
+  detail       JSON,              -- { metrics: [{ name, baseline, current, diff_pct, verdict, unit }] }
   created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
@@ -404,9 +412,9 @@ CREATE TABLE regression_result (
 ### 接口设计
 
 ```
-POST /api/regression/run      # 选定 task + baseline → 计算 diff，写库
-GET  /api/regression/<id>     # 查看某次回归结果
-GET  /api/regression/list     # 历史回归列表
+POST /api/regressions          # 选定 task + baseline → 计算 diff，写库
+GET  /api/regressions/<id>     # 查看某次回归结果
+GET  /api/regressions          # 历史回归列表（verdict筛选+分页）
 ```
 
 ### 前端展示
@@ -421,10 +429,10 @@ GET  /api/regression/list     # 历史回归列表
 
 ### 开发步骤
 
-1. **Week 5 Day 4** — 实现 `POST /api/regression/run`（diff 计算逻辑 + 写 `regression_result`）
-2. **Week 5 Day 5** — 单元测试：覆盖 PASS / WARNING / FAIL 各阈值边界
-3. **Week 6 Day 1** — 前端回归结果页（三列对比表，按 verdict 着色）
-4. **Week 6 Day 2** — 历史回归列表页 + 趋势图（ECharts：X轴=时间，Y轴=IOPS Diff%）
+1. ~~**Week 5 Day 4** — 实现 `POST /api/regressions`（diff 计算逻辑 + 写 `regression_result`）~~ ✅ 已完成
+2. ~~**Week 5 Day 5** — 单元测试：覆盖 PASS / WARNING / FAIL 各阈值边界~~ ✅ 已完成
+3. ~~**Week 6 Day 1** — 前端回归结果页（三列对比表，按 verdict 着色）~~ ✅ 已完成
+4. ~~**Week 6 Day 2** — 历史回归列表页 + 趋势图~~ ✅ 已完成
 
 ---
 
@@ -435,16 +443,23 @@ GET  /api/regression/list     # 历史回归列表
 
 ### 实现方案
 
+> **实现偏差**：详设中规划使用 Celery chord 进行并发调度，实际采用 threading + daemon thread + commit-before-start 模式。
+> 原因：(1) 引入 Celery 需新增 Redis 依赖 + 重构调度层，违反 §0.1 不可变层原则；(2) 当前 Agent 规模（<20台）threading 完全满足并发需求；(3) commit-before-start 确保线程内 DB 记录可见。
+
 ```
-前端选择多个 Agent + fio 配置
+前端选择多个在线设备 + 统一 fio 配置
       ↓
-Server 创建一个 group_task（父任务）
+Server 创建 GroupTask 父任务 → flush 获取 task_ids → commit
       ↓
-Celery 为每个 Agent 创建一个子 task
+为每台设备启动 daemon thread → Thread.start()
       ↓
-各 Agent 并行执行
+各 Agent 并行执行 FIO
       ↓
-所有子任务完成 → 聚合 Max / Min / Avg → 更新 group_task
+IngestService.flush_task 检测 is_sub_task → 触发 try_aggregate
+      ↓
+全部子任务终态 → 计算 Max/Min/Avg（iops/bw/lat_mean/lat_p99）
+      ↓
+更新 GroupTask.summary + status(done/failed/partial)
 ```
 
 ### 数据模型
@@ -454,12 +469,16 @@ CREATE TABLE group_task (
   id          INT PRIMARY KEY AUTO_INCREMENT,
   name        VARCHAR(128),
   fio_config  JSON,
-  status      ENUM('pending','running','done','failed') DEFAULT 'pending',
-  summary     JSON,   -- { "iops_max": ..., "iops_min": ..., "iops_avg": ... }
-  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  status      ENUM('pending','running','done','failed','partial') DEFAULT 'pending',
+  summary     JSON,   -- { iops_max/min/avg, bw_max/min/avg, lat_mean_max/min/avg, lat_p99_max/min/avg }
+  total_count INT DEFAULT 0,     -- 子任务总数（实现新增）
+  done_count  INT DEFAULT 0,     -- 已完成数（实现新增）
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 ALTER TABLE task ADD COLUMN group_task_id INT;
+ALTER TABLE task ADD COLUMN is_sub_task BOOLEAN DEFAULT FALSE;
 ```
 
 ### Celery 任务
@@ -484,9 +503,9 @@ def aggregate_group_result(results, group_task_id):
 
 ### 开发步骤
 
-1. **Week 6 Day 3** — 建 `group_task` 表，实现创建接口（自动拆分子任务）
-2. **Week 6 Day 4** — Celery chord 调度逻辑 + 聚合函数
-3. **Week 6 Day 5** — 前端：多盘测试配置页（多选 Agent）+ 汇总结果展示（Max/Min/Avg 卡片）
+1. ~~**Week 6 Day 3** — 建 `group_task` 表，实现创建接口（自动拆分子任务）~~ ✅ 已完成
+2. ~~**Week 6 Day 4** — threading 并发调度逻辑 + flush_task 回调触发聚合~~ ✅ 已完成
+3. ~~**Week 6 Day 5** — 前端：多盘测试配置页（Transfer 多选在线设备）+ 汇总结果展示~~ ✅ 已完成
 
 ---
 
@@ -495,17 +514,19 @@ def aggregate_group_result(results, group_task_id):
 ### 目标
 支持 SNIA PTS 标准测试流程，输出行业认可的 Steady State 测试报告。
 
-### 测试流程
+### 实现方案
+
+> **实现偏差**：详设中规划使用 Celery chain 串行三阶段，实际采用 daemon thread 串行编排（与多盘并发同理）。子任务标识使用 task.id（1-indexed 自增）而非 task_name，与 V1 管道一致。稳态算法简化为 max-deviation（详设为 OLS 线性回归）。新增 `aborted` 状态区分用户终止与异常失败。
 
 ```
 1. Precondition（预处理）
-   └── 全盘顺序写 2遍，清除初始化效果
+   └── 顺序写 2 遍（每遍一轮 FIO），清除初始化效果
 2. IOPS Test（IOPS 扫描）
-   └── 128K/32K/16K/8K/4K/0.5K × RandWrite/RandRead/SeqWrite/SeqRead
+   └── bs × pattern 矩阵遍历（6×4=24 组），单组失败 continue
 3. Steady State（稳态判定）
-   └── 4K RandWrite，连续执行25轮（每轮60秒）
-   └── 收集每轮 IOPS，计算最近5轮波动率
-   └── 波动率 < 10% → Steady State Achieved
+   └── 4K RandWrite，连续执行最多 25 轮（每轮60秒）
+   └── 收集每轮 IOPS → is_steady_state(window=5, threshold=0.1)
+   └── 最近 5 轮最大偏差 < 10% → Steady State Achieved
 ```
 
 ### 稳态判定算法
@@ -545,23 +566,32 @@ def is_steady_state(iops_history: list, window=5, threshold=0.1):
 ```sql
 CREATE TABLE snia_task (
   id           INT PRIMARY KEY AUTO_INCREMENT,
-  agent_id     INT,
-  status       ENUM('pending','preconditioning','iops_test','steady_state','done','failed'),
+  name         VARCHAR(128) NOT NULL,
+  device_id    INT NOT NULL,              -- 详设为 agent_id，实际改为 device_id FK
+  device_ip    VARCHAR(50) NOT NULL,
+  device_path  VARCHAR(255) NOT NULL,
+  config       JSON,                     -- 按 section 深度合并默认配置
+  current_phase VARCHAR(32) DEFAULT 'pending',
   current_round INT DEFAULT 0,
-  iops_history JSON,
+  total_rounds  INT DEFAULT 25,
+  iops_history  TEXT,                    -- JSON 序列化（详设为 JSON 列，实际用 TEXT + json.dumps/loads）
+  iops_results  JSON,
   is_steady    BOOLEAN DEFAULT FALSE,
+  status       ENUM('pending','preconditioning','iops_test','steady_state','done','failed','aborted') DEFAULT 'pending',
+  error        TEXT,                     -- 详设未规划，实现新增用于错误信息存储
   result       JSON,
-  created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 ```
 
 ### 开发步骤
 
-1. **Week 7 Day 1** — 建 `snia_task` 表，实现启动接口
-2. **Week 7 Day 2** — Celery 任务链（`precondition → iops_test → steady_state`），每阶段结束更新 status
-3. **Week 7 Day 3** — 稳态判定算法实现 + 单元测试
-4. **Week 7 Day 4** — 前端：进度展示（当前阶段 + 当前轮次 + 实时 IOPS 折线图）
-5. **Week 7 Day 5** — 稳态收敛可视化（ECharts 标注稳态窗口）+ 测试报告导出（JSON）
+1. ~~**Week 7 Day 1** — 建 `snia_task` 表，实现启动接口~~ ✅ 已完成
+2. ~~**Week 7 Day 2** — daemon thread 三阶段流水线编排~~ ✅ 已完成
+3. ~~**Week 7 Day 3** — 稳态判定算法实现 + 单元测试~~ ✅ 已完成
+4. ~~**Week 7 Day 4** — 前端：进度展示（Steps + 轮次 + IOPS 收敛柱状图）~~ ✅ 已完成
+5. ~~**Week 7 Day 5** — 稳态窗口标注 + 报告导出接口~~ ✅ 已完成
 
 ---
 
@@ -572,12 +602,14 @@ CREATE TABLE snia_task (
 
 ### 流程
 
+> **实现偏差**：详设中 agent_id + device 字段，实际为 device_id + device_ip + device_path。新增 task_before_id / task_after_id 用于子任务溯源。V2 仅支持用户手动升级 + 确认模式，详设中的自动 `nvme fw-download/fw-activate` 标记为 V3+ 增强。升级后自动创建基线供后续回归复用。
+
 ```
-1. 选定 Agent + 配置测试参数
-2. 采集升级前 Baseline（自动运行一次 FIO）
-3. 提示用户手动升级固件（或调用 nvme fw-download + fw-activate）
-4. 运行同参数 FIO → 记录升级后结果
-5. 调用回归计算逻辑 → 生成对比报告
+1. 选定在线设备 + 配置测试参数
+2. 自动采集升级前基线（daemon thread 运行 FIO → 读取 fw_before）
+3. 提示用户手动升级固件（状态 waiting_upgrade）
+4. 用户确认升级完成 → 读取 fw_after → 自动运行升级后 FIO
+5. 升级后测试完成 → 自动创建基线 + 调用回归比对 → 生成报告
 ```
 
 ### 数据模型
@@ -585,25 +617,32 @@ CREATE TABLE snia_task (
 ```sql
 CREATE TABLE fw_upgrade_test (
   id              INT PRIMARY KEY AUTO_INCREMENT,
-  agent_id        INT,
-  device          VARCHAR(64),
-  fw_before       VARCHAR(64),
-  fw_after        VARCHAR(64),
-  fio_config      JSON,
+  name            VARCHAR(128) NOT NULL,
+  device_id       INT NOT NULL,             -- 详设为 agent_id，实际改为 device_id FK
+  device_ip       VARCHAR(50) NOT NULL,
+  device_path     VARCHAR(255) NOT NULL,
+  fw_before       VARCHAR(64),             -- 自动从 Agent FW Log 读取（_extract_active_fw）
+  fw_after        VARCHAR(64),             -- 升级确认后自动读取
+  fio_config      JSON NOT NULL,
   result_before   JSON,
+  task_before_id  INT,                     -- 升级前子任务 ID（实现新增，详设未规划）
   result_after    JSON,
-  regression_id   INT,           -- 关联 regression_result
-  status          ENUM('collecting_baseline','waiting_upgrade','testing_after','done'),
-  created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+  task_after_id   INT,                     -- 升级后子任务 ID（实现新增）
+  regression_id   INT,
+  status          ENUM('pending','collecting_baseline','waiting_upgrade','testing_after','done','failed','aborted') DEFAULT 'pending',
+  error           TEXT,                    -- 实现新增：错误信息存储
+  created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 ```
 
 ### 接口设计
 
 ```
-POST /api/fw_test/start          # 启动，开始采集升级前基线
-POST /api/fw_test/<id>/upgraded  # 用户确认固件已升级，触发升级后测试
-GET  /api/fw_test/<id>/report    # 获取对比报告
+POST /api/fw-tests                    # 启动，开始采集升级前基线
+POST /api/fw-tests/<id>/confirm-upgrade  # 用户确认固件已升级，触发升级后测试
+POST /api/fw-tests/<id>/abort         # 用户终止测试
+GET  /api/fw-tests/<id>/report        # 获取对比报告（含 regression 或 null）
 ```
 
 ### 前端展示
@@ -617,11 +656,11 @@ GET  /api/fw_test/<id>/report    # 获取对比报告
 
 ### 开发步骤
 
-1. **Week 8 Day 1** — 建 `fw_upgrade_test` 表，实现 `start` 接口（自动触发 FIO 采集基线）
-2. **Week 8 Day 2** — `upgraded` 接口（触发升级后测试 → 完成后调用回归计算）
-3. **Week 8 Day 3** — 前端向导式页面（Step 1 采集基线 → Step 2 提示升级 → Step 3 查看报告）
-4. **Week 8 Day 4** — 报告页面（对比表 + AI 自动生成升级建议）
-5. **Week 8 Day 5** — 联调 + 端到端测试
+1. ~~**Week 8 Day 1** — 建 `fw_upgrade_test` 表，实现 `POST /api/fw-tests`~~ ✅ 已完成
+2. ~~**Week 8 Day 2** — `confirm-upgrade` 接口 + 自动创建基线 + 回归比对~~ ✅ 已完成
+3. ~~**Week 8 Day 3** — 前端向导式页面（Steps 三步 + 确认按钮 + Popconfirm 终止）~~ ✅ 已完成
+4. **Week 8 Day 4** — 报告页面 AI 自动生成升级建议 | 📋 待开发（P1 延后）
+5. ~~**Week 8 Day 5** — 联调 + 端到端测试~~ ✅ 已完成
 
 ---
 
@@ -1102,7 +1141,7 @@ SMART 数据：
 
 **SSD Engine** — AI-Native SSD Validation Platform
 
-**技术栈：** Flask + React + MySQL + Redis + Celery
+**技术栈：** Flask + React + MySQL + APScheduler + threading
 
 **核心能力：**
 - FIO 自动化测试 / SNIA 标准测试（含稳态自动收敛判断）

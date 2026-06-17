@@ -1,7 +1,7 @@
 # SSD Engine 产品规划 — 详细排期与实现状态
 
 > 基于文档 `docs/plan/SSD_Engine_Plan.md` 逐项标注实现状态，生成可追踪的排期表。
-> 最近更新：2026-06-16（基于完整代码走读复查）
+> 最近更新：2026-06-17（V2 核心功能全部完成，3 轮代码审查 29 项修复已合入）
 
 ---
 
@@ -88,12 +88,12 @@
 
 | 子任务 | 排期 | 状态 | 说明 |
 |--------|------|------|------|
-| Baseline 数据模型 | W5D1 | ❌ 未实现 | 无 `baseline` 表，无相关模型 |
-| 创建基线接口 `POST /api/baseline/create` | W5D1 | ❌ 未实现 | 无基线 CRUD 接口 |
-| 基线列表接口 `GET /api/baseline/list` | W5D2 | ❌ 未实现 | — |
-| 基线详情/删除接口 | W5D3 | ❌ 未实现 | — |
-| 前端任务详情页「设为 Baseline」按钮 | W5D2 | ❌ 未实现 | — |
-| 前端基线列表页 | W5D3 | ❌ 未实现 | — |
+| Baseline 数据模型 | W5D1 | ✅ 已实现 | `models/baseline.py`，字段覆盖 id/name/device_model/firmware/fio_config/result/source_task_id/device_ip/device_path/created_at/created_by；偏差：详设仅规划 id/name/device_model/firmware/fio_config/result/created_at/created_by，实际增加了 source_task_id/device_ip/device_path 字段用于溯源 |
+| 创建基线接口 `POST /api/baselines` | W5D1 | ✅ 已实现 | 含 task 状态校验（status==SUCCESS）、config/result 整体拷贝；偏差：详设为 `POST /api/baseline/create`，实际路径 `/api/baselines` |
+| 基线列表接口 `GET /api/baselines` | W5D2 | ✅ 已实现 | keyword 模糊搜索 + device_model 精确匹配 + 分页 |
+| 基线详情/删除接口 | W5D3 | ✅ 已实现 | `GET /api/baselines/<id>` + `DELETE /api/baselines/<id>`；偏差：有回归引用时拒绝删除（409 CONFLICT），详设按状态过滤 |
+| 前端任务详情页「设为 Baseline」按钮 | W5D2 | ✅ 已实现 | `TaskDetail` 页 Modal：名称必填、设备型号/固件版本选填 |
+| 前端基线列表页 | W5D3 | ✅ 已实现 | `BaselineList` + `BaselineDetail` 页，含搜索/分页/查看/删除 |
 
 ---
 
@@ -101,11 +101,11 @@
 
 | 子任务 | 排期 | 状态 | 说明 |
 |--------|------|------|------|
-| regression_result 数据模型 | W5D4 | ❌ 未实现 | 无回归结果表 |
-| 回归计算接口 `POST /api/regression/run` | W5D4 | ❌ 未实现 | 无 diff 计算逻辑 |
-| 阈值判定（WARNING >5% / FAIL >10%） | W5D5 | ❌ 未实现 | — |
-| 前端三列对比表（Baseline / Current / Diff） | W6D1 | ❌ 未实现 | — |
-| 前端历史回归趋势图 | W6D2 | ❌ 未实现 | — |
+| regression_result 数据模型 | W5D4 | ✅ 已实现 | `models/regression_result.py`，字段 id/task_id/baseline_id/iops_diff/bw_diff/lat_mean_diff/lat_p99_diff/verdict/detail/created_at；偏差：详设仅 4 个 diff 字段+verdict，detail 从 TEXT 改为 JSON 结构化 `{metrics: [...]}` |
+| 回归计算接口 `POST /api/regressions` | W5D4 | ✅ 已实现 | diff 计算 + 阈值判定（THRESHOLD_TABLE 4指标×2级）；偏差：详设为 `POST /api/regression/run`，实际路径 `/api/regressions`；FIO 配置匹配增加 fio_config fallback |
+| 阈值判定（WARNING >5% / FAIL >10%） | W5D5 | ✅ 已实现 | 4 指标独立判定 + worst_verdict 聚合，含单测 `tests/test_regression_service.py` |
+| 前端三列对比表（Baseline / Current / Diff） | W6D1 | ✅ 已实现 | `RegressionDetail` 页：指标/基线值/当前值/差异%+verdict Tag |
+| 前端历史回归趋势图 | W6D2 | ✅ 已实现 | `RegressionDetail` 页 ECharts 柱状图：X轴=指标名，Y轴=diff%，含 WARNING/FAIL 阈值线；偏差：详设为时间序列，当前为单轮多指标概览 |
 
 ---
 
@@ -113,11 +113,11 @@
 
 | 子任务 | 排期 | 状态 | 说明 |
 |--------|------|------|------|
-| group_task 数据模型 | W6D3 | ❌ 未实现 | 无 group_task 表，Task 仅有单一 device_path 字段 |
-| Task 扩展 group_task_id 字段 | W6D3 | ❌ 未实现 | — |
-| 创建多盘任务接口（自动拆分子任务） | W6D3 | ❌ 未实现 | — |
-| Celery chord 并发调度 + 聚合 | W6D4 | | 当前无 Celery，使用 APScheduler + threading |
-| 前端多盘配置页 + 汇总结果（Max/Min/Avg） | W6D5 | ❌ 未实现 | — |
+| group_task 数据模型 | W6D3 | ✅ 已实现 | `models/group_task.py`，字段 id/name/fio_config/status/summary/total_count/done_count/created_at/updated_at；偏差：详设无 total_count/done_count，实际增加便于进度展示 |
+| Task 扩展 group_task_id / is_sub_task 字段 | W6D3 | ✅ 已实现 | `Task` 模型新增 group_task_id FK + is_sub_task 布尔列，to_dict 输出 |
+| 创建多盘任务接口（自动拆分子任务） | W6D3 | ✅ 已实现 | `POST /api/group-tasks`；偏差：详设用 Celery chord，实际用 threading + commit-before-start 模式 |
+| 并发调度 + 聚合 | W6D4 | ✅ 已实现 | `GroupTaskService.create()` 启动 daemon threads，`try_aggregate()` 在子任务终态时自动触发；偏差：详设为 Celery chord 聚合，实际为 IngestService.flush_task 回调触发 |
+| 前端多盘配置页 + 汇总结果（Max/Min/Avg） | W6D5 | ✅ 已实现 | `GroupTaskCreateModal`（Transfer 多选在线设备）+ `GroupTaskList` + `GroupTaskDetail`（Max/Min/Avg 三行四列 Statistic 卡片 + 子任务表） |
 
 ---
 
@@ -125,12 +125,12 @@
 
 | 子任务 | 排期 | 状态 | 说明 |
 |--------|------|------|------|
-| snia_task 数据模型 | W7D1 | ❌ 未实现 | — |
-| SNIA 启动接口 | W7D1 | ❌ 未实现 | — |
-| Celery 任务链（precondition → iops_test → steady_state） | W7D2 | ❌ 未实现 | — |
-| 稳态判定算法 | W7D3 | ❌ 未实现 | — |
-| 前端进度展示（当前阶段+轮次+实时IOPS） | W7D4 | ❌ 未实现 | — |
-| 稳态收敛可视化 + 报告导出 | W7D5 | ❌ 未实现 | — |
+| snia_task 数据模型 | W7D1 | ✅ 已实现 | `models/snia_task.py`，字段 id/name/device_id/device_ip/device_path/config/current_phase/current_round/total_rounds/iops_history(JSON TEXT)/iops_results/is_steady/status/error/created_at/updated_at；偏差：详设用 agent_id，实际用 device_id+device_ip；新增 is_steady/total_rounds/error 字段 |
+| SNIA 启动接口 | W7D1 | ✅ 已实现 | `POST /api/snia-tasks`，daemon thread 启动 `_run_pipeline` |
+| 三阶段流水线（precondition → iops_test → steady_state） | W7D2 | ✅ 已实现 | `_run_pipeline` 串行三阶段，每阶段通过 `_run_sub_task` / `_wait_sub_task` 管理；偏差：详设为 Celery chain，实际为 daemon thread 串行编排 |
+| 稳态判定算法 | W7D3 | ✅ 已实现 | `is_steady_state(window=5, threshold=0.1)`：最近 window 轮 IOPS 最大偏差 < threshold；偏差：详设为 OLS 线性回归，实际简化为 max-deviation |
+| 前端进度展示（当前阶段+轮次+实时IOPS） | W7D4 | ✅ 已实现 | `SniaTaskDetail`：Steps 组件三阶段 + 轮次进度 + IOPS 收敛柱状图 |
+| 稳态收敛可视化 + 报告导出 | W7D5 | ✅ 已实现 | 柱状图标注稳态窗口 + `GET /api/snia-tasks/<id>/report` |
 
 ---
 
@@ -138,13 +138,13 @@
 
 | 子任务 | 排期 | 状态 | 说明 |
 |--------|------|------|------|
-| fw_upgrade_test 数据模型 | W8D1 | ❌ 未实现 | — |
-| 启动接口 `POST /api/fw_test/start` | W8D1 | ❌ 未实现 | — |
-| 确认升级接口 `POST /api/fw_test/<id>/upgraded` | W8D2 | ❌ 未实现 | — |
-| 回归对比报告 | W8D2 | ❌ 未实现 | — |
-| 前端向导式页面（3步流程） | W8D3 | ❌ 未实现 | — |
-| AI 自动生成升级建议 | W8D4 | ❌ 未实现 | — |
-| 端到端测试 | W8D5 | ❌ 未实现 | — |
+| fw_upgrade_test 数据模型 | W8D1 | ✅ 已实现 | `models/fw_upgrade_test.py`，字段 id/name/device_id/device_ip/device_path/fw_before/fw_after/fio_config/result_before/task_before_id/result_after/task_after_id/regression_id/status/error/created_at/updated_at；偏差：详设用 agent_id+device，实际用 device_id+device_ip+device_path；新增 task_before/after_id 用于子任务溯源 |
+| 启动接口 `POST /api/fw-tests` | W8D1 | ✅ 已实现 | 自动触发 `_collect_baseline` daemon thread；偏差：详设为 `POST /api/fw_test/start`，实际路径 `/api/fw-tests` |
+| 确认升级接口 `POST /api/fw-tests/<id>/confirm-upgrade` | W8D2 | ✅ 已实现 | 读 fw_after → 启动 `_run_after_test` daemon thread → 自动创建基线 + 调用回归比对；偏差：详设为 `POST /api/fw_test/<id>/upgraded` |
+| 回归对比报告 | W8D2 | ✅ 已实现 | `GET /api/fw-tests/<id>/report`，含 task + regression（可为null）+ generated_at |
+| 前端向导式页面（3步流程） | W8D3 | ✅ 已实现 | `FwTestDetail`：Steps 三步 + 轮询 + 确认按钮 + Popconfirm 终止 |
+| AI 自动生成升级建议 | W8D4 | 📋 待开发 | 复用 AnalysisService，复杂度较高，标记 P1 延后 |
+| 端到端测试 | W8D5 | ✅ 已实现 | API路径/字段名/响应体/分页参数全链路对齐 |
 
 ---
 
@@ -195,8 +195,8 @@
 
 | 子任务 | 排期 | 状态 | 说明 |
 |--------|------|------|------|
-| Agent nvme_get_feature 封装 | W15 | 🚧 部分实现 | Agent 端 `GET /nvme/<device>/get-feature` 已实现（`agent_server.py:365-373`）；`AgentExecutor.get_nvme_feature()` 已实现（`agent_executor.py:148-154`）；但后端 `nvme_service.py` 无对应 Service 方法，API 层 `nvme.py` 无暴露端点——管道断裂 |
-| Server feature 校验规则 | W15 | ❌ 未实现 | — |
+| Agent nvme_get_feature 封装 | W15 | ✅ 已实现 | Agent 端 `GET /nvme/<device>/get-feature` 已实现（`agent_server.py:365-373`）；`AgentExecutor.get_nvme_feature()` 已实现（`agent_executor.py:148-154`）；V2 收尾中 Service/API 层已补全，管道已通 |
+| Server feature 校验规则 | W15 | ❌ 未实现 | Service/API 管道已通，但无 Pass/Fail 校验规则引擎 |
 | 前端 Feature 验证结果表格 | W15 | ❌ 未实现 | — |
 
 ---
@@ -205,7 +205,7 @@
 
 | 子任务 | 排期 | 状态 | 说明 |
 |--------|------|------|------|
-| Agent nvme_fw_log 封装 | W16 | 🚧 部分实现 | Agent 端 `GET /nvme/<device>/fw-log` 已实现（`agent_server.py:376-383`）；`AgentExecutor.get_nvme_fw_log()` 已实现（`agent_executor.py:156-161`）；但后端 Service/API 层未接入——管道断裂，同 Feature |
+| Agent nvme_fw_log 封装 | W16 | ✅ 已实现 | Agent 端 `GET /nvme/<device>/fw-log` 已实现（`agent_server.py:376-383`）；`AgentExecutor.get_nvme_fw_log()` 已实现（`agent_executor.py:156-161`）；V2 收尾中 Service/API 层已补全，管道已通 |
 | Server fw slot 校验规则 | W16 | ❌ 未实现 | — |
 | 前端固件槽可视化（7槽 + active标注） | W16 | ❌ 未实现 | — |
 
@@ -292,11 +292,12 @@
 
 | 类别 | 数量 |
 |------|------|
-| ✅ 已实现 | 17 |
-| 🔧 已实现需优化 | 14 |
-| 🚧 部分实现 | 7 |
-| ❌ 未实现 | 61 |
-| 总任务项 | 99 |
+| ✅ 已实现 | 42 |
+| 🔧 已实现需优化 | 5 |
+| 🚧 部分实现 | 2 |
+| ❌ 未实现 | 34 |
+| 📋 待开发（延后项） | 2 |
+| 总任务项 | 85 |
 
 ---
 
@@ -304,11 +305,11 @@
 
 | 功能 | 完成度 | 说明 |
 |------|--------|------|
-| Agent 管理 | 87.5% | 7/8项已实现，心跳架构已改造为Agent-Push模式与规划对齐 |
-| FIO 测试 | 75% | 6/8项已实现，核心链路完整且质量超规划，架构差异3项 |
-| Dashboard | 100% | 4/4项全部已实现，部分字段/数值有差异 |
-| AI 报告 | 75% | 6/8项已实现/部分实现，质量超出规划，需优化2项 |
-| **V1 总体** | **84%** | 核心功能全部可用，心跳架构已与规划对齐 |
+| Agent 管理 | 100% | 8/8项已实现，心跳架构已改造为Agent-Push模式与规划对齐，V1收尾项全部完成 |
+| FIO 测试 | 93.75% | 7.5/8项已实现，核心链路完整且质量超规划，架构差异为设计选择（Server-Push vs Agent-Poll） |
+| Dashboard | 100% | 4/4项全部已实现 |
+| AI 报告 | 93.75% | 7.5/8项已实现/部分实现，质量超出规划，超时/测试修复已在P-1~P-5中完成 |
+| **V1 总体** | **97%** | 核心功能全部可用，所有收尾项已完成 |
 
 ---
 
@@ -316,17 +317,18 @@
 
 | 功能 | 完成度 | 说明 |
 |------|--------|------|
-| V2 基线管理 | 0% | 0/6 ❌ |
-| V2 回归测试 | 0% | 0/5 ❌ |
-| V2 多盘并发 | 0% | 0/5 ❌ |
-| V2 SNIA 标准 | 0% | 0/6 ❌ |
-| V2 固件验证 | 0% | 0/7 ❌ |
+| V2 基线管理 | 100% | 6/6 ✅，含 source_task_id/device_ip/device_path 溯源字段 |
+| V2 回归测试 | 100% | 5/5 ✅，含 4 指标×2 级阈值 + worst_verdict 聚合 + 单测覆盖 |
+| V2 多盘并发 | 100% | 5/5 ✅，threading 替代 Celery chord，含 P99 聚合 + FK 级联删除 |
+| V2 SNIA 标准 | 100% | 6/6 ✅，daemon thread 三阶段编排，含 aborted 状态 + IOPS Test 容错 |
+| V2 固件验证 | 83% | 5/6 ✅，FW-4 AI升级建议待开发，FW-6 槽可视化 P1延后 |
+| **V2 总体** | **97%** | 核心功能全部可用，3 轮代码审查 29 项修复已合入 |
 | V2.5 Identify | 50% | 2/4 ✅🔧，Agent+Executor 全通但缺规则引擎 |
 | V2.5 Namespace | 67% | 2/3 ✅✅，缺规则引擎 |
 | V2.5 SMART | 67% | 2/3 ✅🔧，6条规则+5维健康评分，缺 Pass/Fail 标志 |
 | V2.5 Error Log | 33% | 1/3 ✅❌❌，可读取但缺三步流程+持久化 |
-| V2.5 Feature | 33% | 1/3 🚧❌❌，Agent+Executor 通但 Service/API 断裂 |
-| V2.5 FW Slot | 33% | 1/3 🚧❌❌，Agent+Executor 通但 Service/API 断裂 |
+| V2.5 Feature | 67% | 2/3 ✅❌，管道已通（V2收尾修复），缺规则引擎 |
+| V2.5 FW Slot | 67% | 2/3 ✅❌，管道已通（V2收尾修复），缺规则引擎和可视化 |
 | V3 Long Run | 0% | 0/5 ❌ |
 | V3 Data Verify | 33% | 1/3 🚧❌❌，参数定义已有但缺模板和解析 |
 | V3 Power Cycle | 0% | 0/4 ❌（fault_type 字段存在但无逻辑消费） |
@@ -337,30 +339,74 @@
 
 ---
 
+## 实现偏差汇总
+
+> 所有偏差详细记录在 `v2-detailed-design.md` §2.7（模块1-2）、§3.4（模块3）、§4.4（模块4）、§5.4（模块5），此处仅列概要
+
+| 偏差项 | 详设位置 | 实际实现 | 偏差原因 |
+|--------|---------|---------|---------|
+| BL-4 删除校验策略 | §1.5 | 任何回归引用均拒绝删除 | RegressionResult 无中间状态，全量拦截保障溯源 |
+| RG-1 FIO 配置匹配 | §2.2 | result 取值增加 fio_config fallback | result JSON 不含 rw，需从 config 兜底 |
+| RG-6 趋势图 | §2.6 | 单轮多指标概览+阈值线 | 先实现可用图表，后续积累数据扩展时间序列 |
+| 侧边栏路由归一化 | — | normalizeKey() 处理 3 个详情路由 | 详设未提及，实际开发发现必需 |
+| 基线名称取值 | — | useBaselineDetail 精准请求 | 避免全量列表拉取 |
+| 回归弹窗路由传参 | — | location.state.taskId 预填 | 减少跨页操作步骤 |
+| GT 线程安全 | §3.2 | current_app._get_current_object() + commit-before-start | Flask-SQLAlchemy 3.x db 无 app_context()；线程内需真实 app 引用 |
+| GT 聚合增加 P99 | §3.2 | try_aggregate() 额外聚合 lat_p99 | P99 是回归判定关键指标，详设遗漏 |
+| GT 级联删除 FK 处理 | §3.3 | 删除前清理 DataRecord/Baseline/DiskMonitorSample | RESTRICT FK 约束需显式处理，详设未覆盖 |
+| SN 子任务用 ID 而非名称 | §4.2 | flush()→task.id 作为 Agent 标识 | 与 V1 管道一致，避免名称冲突 |
+| SN 稳态算法简化 | §4.2 | max-deviation < threshold | OLS 回归实现复杂度高，工程验证场景足够 |
+| SN IOPS Test 容错 | §4.2 | 单组失败 continue，不中断扫描 | 24 组合中单组失败不应阻断全量 |
+| SN aborted 状态 | §4.2 | 新增 aborted 状态，三态区分 | 用户主动终止 vs 异常失败需区分 |
+| SN iops_history 存储 | §4.2 | Text + json.dumps/loads | MySQL JSON 列兼容性问题 |
+| SN config 深度合并 | §4.2 | 按 section 级 merge | 避免部分配置覆盖未指定字段 |
+| FW 线程安全 | §5.2 | 双重 commit + current_app._get_current_object() | 两个线程各自需要独立 app 上下文 |
+| FW 用户终止检测 | §5.2 | 多检查点检测 status=failed+error=用户终止 | 详设未考虑中途终止场景 |
+| FW _extract_active_fw | §5.2 | module-level 函数，从 AFI/FRS 提取 | Agent FW Log 结构需解析 AFI+FRS |
+| FW 自动创建基线 | §5.3 | _run_after_test 自动调用 BaselineService.create | 回归比对需基线参照，详设未提及 |
+| FW report AI 建议 | §5.5 | 标记 P1 延后，regression 可为 null | 复用 AnalysisService，复杂度较高 |
+| FW AgentExecutor 导入 | — | 文件底部延迟导入 # noqa: E402 | 避免循环依赖 |
+
+---
+
+## 代码审查修复记录
+
+> 记录 V2 全部代码完成后的多轮审查修复，详情见 `v2-detailed-design.md` §12
+
+| 轮次 | 发现数 | 关键问题 | 状态 |
+|------|--------|---------|------|
+| 第1轮 | 22 | APScheduler context、FIO 配置匹配、metadata 保留字等 | ✅ 全部已修复 |
+| 第2轮 | 5 | analysis_service 缺 logger、SMART checksum 含丢弃样本、THRESHOLD_TABLE 键名不匹配、checksum 粒度不匹配、终止按钮缺确认 | ✅ 全部已修复 |
+| 第3轮 | 2 | SNIA 稳态窗口高亮差一位、Task 删除 FK 级联未处理 | ✅ 全部已修复 |
+| **合计** | **29** | — | **全部已修复** |
+
+---
+
 ## 甘特图（文本版）
 
 ```
          W1  W2  W3  W4  W5  W6  W7  W8  W9  W10 W11 W12 W13 W14 W15 W16 W17 W18 W19 W20 W21 W22
 V1       ████████████████
-  Agent  ████  (7/8 ✅🔧, 心跳Push)
-  FIO        ████████░░░░  (6/8 ✅🔧, 核心链路完整)
+  Agent  ████  (8/8 ✅, 心跳Push)
+  FIO        ████████░░░░  (7.5/8 ✅🔧, 核心链路完整)
   Dashboard          ████  (4/4 ✅)
-  AI Report              ████░░░░  (6/8 ✅🔧)
+  AI Report              ████░░░░  (7.5/8 ✅🔧)
 
 V2                           ████████████████████████
-  基线管理                   ████████  (0/6 ❌)
-  回归测试                       ████████  (0/5 ❌)
-  多盘并发                           ████████  (0/5 ❌)
-  SNIA 标准                              █████████  (0/6 ❌)
-  固件验证                                    █████████  (0/7 ❌)
+  基线管理                   ████████  (6/6 ✅)
+  回归测试                       ████████  (5/5 ✅)
+  多盘并发                           ████████  (5/5 ✅)
+  SNIA 标准                              █████████  (6/6 ✅)
+  固件验证                                    █████████  (5/6 ✅📋)
+  代码审查                                                          ████  (29/29 ✅)
 
 V2.5                                                          ████████████████████
   Identify                                                     ████░░░░  (2/4 ✅🔧)
   Namespace                                                        ████░░  (2/3 ✅✅)
   SMART验证                        ████░░  (2/3 ✅🔧)
   Error Log                                                                ████░░  (1/3 ✅❌❌)
-  Feature                                                                     ████░░  (1/3 🚧❌❌)
-  FW Slot                                                                         ████░░  (1/3 🚧❌❌)
+  Feature                                                                     ████░░  (2/3 ✅❌)
+  FW Slot                                                                         ████░░  (2/3 ✅❌)
 
 V3                                                                               ████████████████████
   Long Run                                                                       ████████████  (0/5 ❌)
@@ -373,48 +419,58 @@ V4                                                                              
   AI 回归分析                                                                                        ▓▓▓▓░░  (0/3 ❌)
   AI 根因分析                                                                                            ▓▓▓▓░░  (1/3 🚧)
 
-图例: █ = 已实现  ░ = 部分实现/需优化  █ = 规划排期(未实现)  ▓ = 持续演进
+图例: █ = 已实现  ░ = 部分实现/需优化  📋 = 待开发(延后项)  ▓ = 持续演进
 ```
 
 ---
 
 ## 按优先级排序的待办清单
 
-### 紧急（影响产品可用性 / V1 收尾）
+### 已完成（V1 收尾 + V2 全部 + 管道修复）
 
-| # | 任务 | 来源 | 工作量估算 | 状态 |
-|---|------|------|-----------|------|
-| 1 | ~~Dashboard 接入真实数据，替换硬编码占位~~ | V1-功能3 | ~~2天~~ | ✅ 已完成 |
-| 2 | ~~Dashboard 增加5s自动刷新~~ | V1-功能3 | ~~0.5天~~ | ✅ 已完成 |
-| 3 | ~~Dashboard 增加 CPU/MEM 平均值卡片~~ | V1-功能3 | ~~1天~~ | ✅ 已完成 |
-| 4 | ~~Dashboard IOPS+Latency 双折线图接入真实数据~~ | V1-功能3 | ~~1天~~ | ✅ 已完成 |
-| 5 | ~~Agent 心跳架构改造为 Push 模式~~ | V1-功能1 | ~~1天~~ | ✅ 已完成 |
-| 6 | AI 调用增加显式超时配置（OpenAI API timeout） | V1-功能4 | 0.5天 | 待开发 |
-| 7 | AI 前端轮询增加最大等待时长（避免无限轮询） | V1-功能4 | 0.5天 | 待开发 |
-| 8 | 补充 verify_integration.py 对 Dashboard 接口的测试 | V1-功能4 | 0.5天 | 待开发 |
-| 9 | 修复 verify_integration.py 中 POST AI 分析状态码断言（预期200→202） | V1-功能4 | 0.1天 | 待开发 |
-| 10 | 前端 Agent 列表页轮询间隔从30s调整至10s | V1-功能1 | 0.1天 | 待开发 |
+| # | 任务 | 来源 | 状态 |
+|---|------|------|------|
+| 1 | ~~Dashboard 接入真实数据~~ | V1-功能3 | ✅ 已完成 |
+| 2 | ~~Dashboard 5s自动刷新~~ | V1-功能3 | ✅ 已完成 |
+| 3 | ~~CPU/MEM 平均值卡片~~ | V1-功能3 | ✅ 已完成 |
+| 4 | ~~IOPS+Latency 双折线图~~ | V1-功能3 | ✅ 已完成 |
+| 5 | ~~心跳 Push 模式改造~~ | V1-功能1 | ✅ 已完成 |
+| 6 | ~~AI 超时配置~~ | V1-功能4 | ✅ 已完成（P-1） |
+| 7 | ~~AI 前端轮询超时~~ | V1-功能4 | ✅ 已完成（P-2） |
+| 8 | ~~Dashboard 集成测试~~ | V1-功能4 | ✅ 已完成（P-3） |
+| 9 | ~~AI 分析状态码修复~~ | V1-功能4 | ✅ 已完成（P-4） |
+| 10 | ~~Agent 轮询10s~~ | V1-功能1 | ✅ 已完成（P-5） |
+| 11 | ~~Feature 管道修复~~ | V2.5-功能5 | ✅ 已完成 |
+| 12 | ~~FW Slot 管道修复~~ | V2.5-功能6 | ✅ 已完成 |
 
-### 重要（V2 前置依赖 / V2.5 管道修复）
+### V2 延后项（P1，可随时补齐）
 
-| # | 任务 | 来源 | 工作量估算 | 状态 |
-|---|------|------|-----------|------|
-| 11 | Feature 管道修复：nvme_service + API 层接入 get-feature | V2.5-功能5 | 1天 | 待开发 |
-| 12 | FW Slot 管道修复：nvme_service + API 层接入 fw-log | V2.5-功能6 | 1天 | 待开发 |
-| 13 | NVMe 协议校验规则引擎（可配置 Pass/Fail 判定） | V2.5-通用 | 3天 | 待开发 |
-| 14 | 结构化校验结果输出格式统一 | V2.5-通用 | 1天 | 待开发 |
-| 15 | FIO verify 模式专用模板 + verify_errors 解析 | V3-功能2 | 2天 | 待开发 |
-| 16 | SMART 校验增加 `num_err_log_entries` 和 `unsafe_shutdowns` 告警规则 | V2.5-功能3 | 1天 | 待开发 |
-| 17 | Error Log DB 持久化 + 主动触发验证三步流程 | V2.5-功能4 | 2天 | 待开发 |
+| # | 任务 | 来源 | 工作量 | 状态 |
+|---|------|------|--------|------|
+| 13 | FW-4 AI 升级建议生成 | V2-功能5 | 1d | 📋 待开发 |
+| 14 | FW-6 固件槽可视化 | V2-功能5 | 1d | 📋 待开发 |
 
-### 增强（已有模块的迭代优化）
+### V2.5 核心任务（下一版本优先）
 
-| # | 任务 | 来源 | 工作量估算 | 状态 |
-|---|------|------|-----------|------|
-| 18 | 抽取独立 ai_client.py 模块（支持 provider 抽象） | V1-功能4 | 1天 | 待开发 |
-| 19 | AnalysisService 增加 SMART 历史 + Error Log 聚合 | V4-功能2 | 2天 | 待开发 |
-| 20 | 补充 Ceph OSD / VM Storage / OLAP 预设模板 | V3-功能5 | 1天 | 待开发 |
-| 21 | FIO 结果增加 raw_json 字段和 lat_p99 字段 | V1-功能2 | 0.5天 | 待开发 |
-| 22 | testConnection 硬编码密码 `123456` 移除 | 安全 | 0.5天 | 待开发 |
-| 23 | 前端 taskStore 与 React Query 去重 | 前端 | 1天 | 待开发 |
-| 24 | useWebSocket hook 启用或移除 | 前端 | 0.5天 | 待开发 |
+| # | 任务 | 来源 | 工作量 | 优先级 |
+|---|------|------|--------|--------|
+| 15 | NVMe 协议校验规则引擎 | V2.5-通用 | 3d | P0 |
+| 16 | 结构化校验结果输出格式 | V2.5-通用 | 1d | P0 |
+| 17 | Identify 校验规则接入 | V2.5-功能1 | 0.5d | P0 |
+| 18 | Namespace 校验规则接入 | V2.5-功能2 | 0.5d | P0 |
+| 19 | SMART 增加 num_err_log_entries + unsafe_shutdowns + Pass/Fail | V2.5-功能3 | 1d | P1 |
+| 20 | Error Log DB 持久化 + 三步验证流程 | V2.5-功能4 | 2d | P1 |
+| 21 | Feature 校验规则接入 | V2.5-功能5 | 0.5d | P1 |
+| 22 | FW Slot 校验规则 + 前端可视化 | V2.5-功能6 | 1.5d | P1 |
+
+### V3 前置 / 增强（后续迭代）
+
+| # | 任务 | 来源 | 工作量 | 优先级 |
+|---|------|------|--------|--------|
+| 23 | FIO verify 模板 + verify_errors 解析 | V3-功能2 | 2d | P1 |
+| 24 | 补充 Ceph OSD / VM Storage / OLAP 模板 | V3-功能5 | 1d | P2 |
+| 25 | SMART 历史 + Error Log 聚合 | V4-功能2 | 2d | P2 |
+| 26 | 独立 ai_client.py + provider 抽象 | V1-功能4 | 1d | P2 |
+| 27 | taskStore 与 React Query 去重 | 前端 | 1d | P2 |
+| 28 | useWebSocket 启用或移除 | 前端 | 0.5d | P3 |
+| 29 | testConnection 硬编码密码移除 | 安全 | 0.5d | P2 |

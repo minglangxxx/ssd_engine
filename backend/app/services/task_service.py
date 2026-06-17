@@ -13,7 +13,6 @@ from app.utils.db import db_released
 from app.utils.helpers import ApiError
 from app.workloads.fio_workload import FioConfigError, FioConfigValidator
 from app.utils.logger import get_logger
-from app.utils.time import to_beijing_iso
 from app.utils.time import beijing_now, to_beijing_iso
 
 logger = get_logger(__name__)
@@ -93,6 +92,16 @@ class TaskService:
     def delete(task_id: int) -> None:
         logger.info(f"Deleting task {task_id}")
         task = TaskService.get(task_id)
+        from app.models.data_record import DataRecord
+        DataRecord.query.filter_by(task_id=task.id).delete()
+        from app.models.baseline import Baseline
+        from app.models.regression_result import RegressionResult
+        for b in Baseline.query.filter_by(source_task_id=task.id).all():
+            if RegressionResult.query.filter_by(baseline_id=b.id).first():
+                raise ApiError('CONFLICT', f'基线 #{b.id} 存在回归引用，需先删除回归结果', 409)
+            db.session.delete(b)
+        from app.models.monitor_data import DiskMonitorSample
+        DiskMonitorSample.query.filter_by(task_id=task.id).update({DiskMonitorSample.task_id: None})
         FioTrendData.query.filter_by(task_id=task.id).delete()
         db.session.delete(task)
         db.session.commit()
@@ -159,6 +168,9 @@ class TaskService:
             task.updated_at = datetime.utcnow()
             TaskService._replace_trend_points(task.id, trend_data)
             db.session.commit()
+            if task.is_sub_task and task.group_task_id:
+                from app.services.group_task_service import GroupTaskService
+                GroupTaskService.try_aggregate(task.group_task_id)
             logger.info(f"Task {task_id} stopped successfully")
             return task
         except Exception:
@@ -277,6 +289,10 @@ class TaskService:
             if trend_data:
                 TaskService._replace_trend_points(task.id, trend_data)
             db.session.commit()
+
+            if task.is_sub_task and task.group_task_id and task.status in {TaskStatus.SUCCESS, TaskStatus.FAILED}:
+                from app.services.group_task_service import GroupTaskService
+                GroupTaskService.try_aggregate(task.group_task_id)
         except Exception:
             db.session.rollback()
             raise
@@ -331,6 +347,14 @@ class TaskService:
             'window_after_seconds': max(0, window_after_seconds),
             'duration_seconds': max(0.0, (end_time - start_time).total_seconds()),
         }
+
+    @staticmethod
+    def start_task_by_id(task_id: int, device_id: int) -> None:
+        task = Task.query.get(task_id)
+        device = Device.query.get(device_id)
+        if not task or not device:
+            raise ApiError('NOT_FOUND', '任务或设备不存在', 404)
+        TaskService._start_task(task, device)
 
     @staticmethod
     def _start_task(task: Task, device: Device) -> None:

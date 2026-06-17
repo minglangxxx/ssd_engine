@@ -6,7 +6,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from .api import api_bp, register_error_handlers
 from .config import Config
 from .extensions import db, migrate
-from .models import analysis, data_record, device, fio_trend, monitor_data, nvme_smart, task
+from .models import analysis, baseline, data_record, device, fio_trend, fw_upgrade_test, group_task, monitor_data, nvme_smart, regression_result, snia_task, task
 from .services.device_status_checker import check_all_agents, CHECK_INTERVAL_SECONDS
 from .utils.logger import setup_logging
 
