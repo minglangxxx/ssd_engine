@@ -1,0 +1,44 @@
+test_type: namespace
+rules:
+  - field: nsze
+    check: gte
+    label: Namespace总大小 (NSZE)
+    params:
+      threshold: 1
+    level: fail
+
+  - field: ncap
+    check: gte
+    label: Namespace容量 (NCAP)
+    params:
+      threshold: 1
+    level: fail
+
+  - field: ncap
+    check: range
+    label: NCAP≤NSZE
+    params:
+      lo: 0
+      hi: nsze
+    level: fail
+
+  - field: nuse
+    check: range
+    label: 已用空间 (NUSE)
+    params:
+      lo: 0
+      hi: ncap
+    level: warn
+
+  - field: flbas
+    check: range
+    label: 当前LBA格式索引 (FLBAS)
+    params:
+      lo: 0
+      hi: lbafs_len
+    level: fail
+
+  - field: lbaf
+    check: not_empty
+    label: LBA格式列表
+    level: fail

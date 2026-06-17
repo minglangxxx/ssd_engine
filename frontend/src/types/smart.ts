@@ -11,6 +11,8 @@ export interface SmartData {
   data_units_read: number;
   data_units_written: number;
   available_spare?: number | null;
+  num_err_log_entries: number;
+  unsafe_shutdowns: number;
 }
 
 /** 单个磁盘的 SMART 快照（含评分和告警） */

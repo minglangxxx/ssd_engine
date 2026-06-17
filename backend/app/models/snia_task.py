@@ -1,8 +1,7 @@
 import json
-from datetime import datetime
 
 from app.extensions import db
-from app.utils.time import to_beijing_iso
+from app.utils.time import beijing_now, to_beijing_iso
 
 
 class SniaTask(db.Model):
@@ -22,8 +21,8 @@ class SniaTask(db.Model):
     config = db.Column(db.JSON, nullable=False)
     result = db.Column(db.JSON, nullable=True)
     error = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=beijing_now)
+    updated_at = db.Column(db.DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
 
     device = db.relationship('Device', backref='snia_tasks')
 

@@ -35,6 +35,15 @@ def _normalize_device_path(device: str) -> str:
     return f'/dev/{normalized}'
 
 
+def _normalize_available_spare(value) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(str(value).replace('%', '').strip())
+    except (ValueError, TypeError):
+        return None
+
+
 class SmartCollector:
     def collect(self, device: str) -> dict:
         try:
@@ -61,7 +70,9 @@ class SmartCollector:
                 'critical_warning': int(data.get('critical_warning', 0) or 0),
                 'data_units_read': _normalize_counter(data.get('data_units_read', 0)),
                 'data_units_written': _normalize_counter(data.get('data_units_written', 0)),
-                'available_spare': data.get('available_spare', data.get('avail_spare')),
+                'available_spare': _normalize_available_spare(data.get('available_spare', data.get('avail_spare'))),
+                'num_err_log_entries': _normalize_counter(data.get('num_err_log_entries', 0)),
+                'unsafe_shutdowns': _normalize_counter(data.get('unsafe_shutdowns', 0)),
             }
         except Exception:
             logger.exception('Failed to collect SMART metrics for %s', device)

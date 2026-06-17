@@ -1,0 +1,19 @@
+test_type: fw_slot
+rules:
+  - field: afi.active
+    check: range
+    label: 当前激活槽号
+    params:
+      lo: 1
+      hi: 7
+    level: fail
+
+  - field: frs[0]
+    check: not_empty
+    label: Slot 1 固件版本
+    level: fail
+
+  - field: frs
+    check: not_empty
+    label: 固件槽列表
+    level: fail

@@ -493,7 +493,7 @@ class NvmeService:
     def get_nvme_error_log(device_id: int, disk_name: str) -> dict:
         return NvmeService._run_nvme_cmd(
             device_id, disk_name, 'get_nvme_error_log',
-            f'/dev/{disk_name}', 'error-log',
+            f'/dev/{NvmeService._extract_nvme_controller(disk_name)}', 'error-log',
         )
 
     @staticmethod

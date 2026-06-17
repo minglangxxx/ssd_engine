@@ -1,0 +1,63 @@
+test_type: identify
+rules:
+  - field: vid
+    check: format
+    label: 厂商ID (VID)
+    params:
+      fmt: hex4
+    level: fail
+
+  - field: ssvid
+    check: not_zero
+    label: 子系统厂商ID (SSVID)
+    level: warn
+
+  - field: sn
+    check: not_empty
+    label: 序列号 (SN)
+    level: fail
+
+  - field: sn
+    check: len_lte
+    label: 序列号长度
+    params:
+      max: 20
+    level: fail
+
+  - field: mn
+    check: not_empty
+    label: 型号 (MN)
+    level: fail
+
+  - field: mn
+    check: len_lte
+    label: 型号长度
+    params:
+      max: 40
+    level: warn
+
+  - field: fr
+    check: not_empty
+    label: 固件版本 (FR)
+    level: fail
+
+  - field: fr
+    check: len_lte
+    label: 固件版本长度
+    params:
+      max: 8
+    level: warn
+
+  - field: mdts
+    check: gte
+    label: 最大数据传输大小 (MDTS)
+    params:
+      threshold: 1
+    level: warn
+
+  - field: nn
+    check: gte
+    label: 命名空间数量 (NN)
+    params:
+      threshold: 1
+    level: fail

@@ -1,0 +1,18 @@
+test_type: feature
+rules:
+  - field: fid_0x06.cdw0
+    check: in_set
+    label: Write Cache
+    params:
+      set: [0, 1]
+    level: warn
+
+  - field: fid_0x02
+    check: not_empty
+    label: Power Management
+    level: warn
+
+  - field: fid_0x0c
+    check: not_empty
+    label: APST
+    level: warn

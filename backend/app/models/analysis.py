@@ -1,7 +1,5 @@
-from datetime import datetime
-
 from app.extensions import db
-from app.utils.time import to_beijing_iso
+from app.utils.time import beijing_now, to_beijing_iso
 
 
 class AiAnalysis(db.Model):
@@ -17,7 +15,7 @@ class AiAnalysis(db.Model):
     data_window_end = db.Column(db.DateTime, nullable=True)
     input_manifest = db.Column(db.JSON, nullable=True)
     source_snapshot_version = db.Column(db.String(64), nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=beijing_now)
     completed_at = db.Column(db.DateTime, nullable=True)
 
     def to_dict(self) -> dict:

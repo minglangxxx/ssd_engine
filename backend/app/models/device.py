@@ -1,7 +1,6 @@
-from datetime import datetime
 
 from app.extensions import db
-from app.utils.time import to_beijing_iso
+from app.utils.time import beijing_now, to_beijing_iso
 
 
 class Device(db.Model):
@@ -21,8 +20,8 @@ class Device(db.Model):
     kernel_version = db.Column(db.String(128), nullable=True)
     cpu_usage = db.Column(db.Float, nullable=True)
     memory_usage = db.Column(db.Float, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=beijing_now)
+    updated_at = db.Column(db.DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
 
     def to_dict(self, include_disks: bool = False) -> dict:
         return {

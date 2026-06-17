@@ -153,6 +153,14 @@ class AgentExecutor(Executor):
         response.raise_for_status()
         return response.json()
 
+    def verify_nvme_error_log(self, device: str) -> dict[str, Any]:
+        response = self.session.post(
+            f'{self.agent_url}/nvme/{device}/error-log-verify',
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()
+
     def get_nvme_fw_log(self, device: str) -> dict[str, Any]:
         response = self.session.get(
             f'{self.agent_url}/nvme/{device}/fw-log', timeout=15,

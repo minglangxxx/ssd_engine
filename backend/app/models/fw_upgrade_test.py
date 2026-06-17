@@ -1,7 +1,6 @@
-from datetime import datetime
 
 from app.extensions import db
-from app.utils.time import to_beijing_iso
+from app.utils.time import beijing_now, to_beijing_iso
 
 
 class FwUpgradeTest(db.Model):
@@ -22,8 +21,8 @@ class FwUpgradeTest(db.Model):
     regression_id = db.Column(db.Integer, db.ForeignKey('regression_results.id'), nullable=True)
     status = db.Column(db.String(20), nullable=False, default='pending')
     error = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=beijing_now)
+    updated_at = db.Column(db.DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
 
     device = db.relationship('Device', backref='fw_tests')
     regression = db.relationship('RegressionResult', backref='fw_test')

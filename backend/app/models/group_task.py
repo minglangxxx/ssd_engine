@@ -1,7 +1,5 @@
-from datetime import datetime
-
 from app.extensions import db
-from app.utils.time import to_beijing_iso
+from app.utils.time import beijing_now, to_beijing_iso
 
 
 class GroupTask(db.Model):
@@ -14,8 +12,8 @@ class GroupTask(db.Model):
     summary = db.Column(db.JSON, nullable=True)
     total_count = db.Column(db.Integer, nullable=False, default=0)
     done_count = db.Column(db.Integer, nullable=False, default=0)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=beijing_now)
+    updated_at = db.Column(db.DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
 
     sub_tasks = db.relationship('Task', backref='group_task', foreign_keys='Task.group_task_id')
 

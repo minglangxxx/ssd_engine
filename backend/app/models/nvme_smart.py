@@ -1,7 +1,5 @@
-from datetime import datetime
-
 from app.extensions import db
-from app.utils.time import to_beijing_iso
+from app.utils.time import beijing_now, to_beijing_iso
 
 
 class NvmeSmartData(db.Model):
@@ -25,8 +23,10 @@ class NvmeSmartData(db.Model):
     data_units_read = db.Column(db.BigInteger, nullable=False, default=0)
     data_units_written = db.Column(db.BigInteger, nullable=False, default=0)
     available_spare = db.Column(db.SmallInteger, nullable=True)
+    num_err_log_entries = db.Column(db.BigInteger, nullable=False, default=0)
+    unsafe_shutdowns = db.Column(db.BigInteger, nullable=False, default=0)
     source = db.Column(db.String(32), nullable=False, default='agent_smart')
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=beijing_now)
 
     def to_dict(self) -> dict:
         return {
@@ -41,4 +41,6 @@ class NvmeSmartData(db.Model):
             'data_units_read': self.data_units_read,
             'data_units_written': self.data_units_written,
             'available_spare': self.available_spare,
+            'num_err_log_entries': self.num_err_log_entries,
+            'unsafe_shutdowns': self.unsafe_shutdowns,
         }

@@ -107,11 +107,22 @@ def _normalize_nvme_disk_name(disk_name: str) -> str | None:
     return match.group(1)
 
 
+_NVME_DEVICE_RE = re.compile(r'^/dev/nvme\d+(n\d+)?$')
+
+
 def _normalize_smart_device_path(device: str) -> str:
     normalized = (device or '').strip().lstrip('/')
     if normalized.startswith('dev/'):
         return f'/{normalized}'
     return f'/dev/{normalized}'
+
+
+def _validate_nvme_device_path(device: str) -> str:
+    """校验并规范化 NVMe 设备路径，非法路径抛 400"""
+    normalized = _normalize_smart_device_path(device)
+    if not _NVME_DEVICE_RE.match(normalized):
+        raise ValueError(f'非法 NVMe 设备路径: {device}')
+    return normalized
 
 
 def collect_background() -> None:
@@ -325,46 +336,61 @@ def monitor_disk_history(disk_name: str):
 
 @app.get('/nvme/<path:device>/id-ctrl')
 def nvme_id_ctrl(device: str):
-    normalized_device = _normalize_smart_device_path(device)
-    logger.info(f'NVMe id-ctrl endpoint called for device: {normalized_device}')
-    data = nvme_collector.id_ctrl(normalized_device)
+    try:
+        normalized = _validate_nvme_device_path(device)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    logger.info(f'NVMe id-ctrl endpoint called for device: {normalized}')
+    data = nvme_collector.id_ctrl(normalized)
     if not data:
-        return jsonify({'error': f'nvme id-ctrl failed for {normalized_device}'}), 502
+        return jsonify({'error': f'nvme id-ctrl failed for {normalized}'}), 502
     return jsonify(data)
 
 
 @app.get('/nvme/<path:device>/id-ns')
 def nvme_id_ns(device: str):
-    normalized_device = _normalize_smart_device_path(device)
-    logger.info(f'NVMe id-ns endpoint called for device: {normalized_device}')
-    data = nvme_collector.id_ns(normalized_device)
+    try:
+        normalized = _validate_nvme_device_path(device)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    logger.info(f'NVMe id-ns endpoint called for device: {normalized}')
+    data = nvme_collector.id_ns(normalized)
     if not data:
-        return jsonify({'error': f'nvme id-ns failed for {normalized_device}'}), 502
+        return jsonify({'error': f'nvme id-ns failed for {normalized}'}), 502
     return jsonify(data)
 
 
 @app.get('/nvme/<path:device>/error-log')
 def nvme_error_log(device: str):
-    normalized_device = _normalize_smart_device_path(device)
-    logger.info(f'NVMe error-log endpoint called for device: {normalized_device}')
-    data = nvme_collector.error_log(normalized_device)
+    try:
+        normalized = _validate_nvme_device_path(device)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    logger.info(f'NVMe error-log endpoint called for device: {normalized}')
+    data = nvme_collector.error_log(normalized)
     if not data:
-        return jsonify({'error': f'nvme error-log failed for {normalized_device}'}), 502
+        return jsonify({'error': f'nvme error-log failed for {normalized}'}), 502
     return jsonify(data)
 
 
 @app.get('/smart/<path:device>')
 def smart(device: str):
-    normalized_device = _normalize_smart_device_path(device)
-    logger.info(f"SMART data endpoint called for device: {normalized_device}")
-    smart_data = smart_collector.collect(normalized_device)
-    logger.info(f"SMART data collected for device: {normalized_device}")
+    try:
+        normalized = _validate_nvme_device_path(device)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    logger.info(f"SMART data endpoint called for device: {normalized}")
+    smart_data = smart_collector.collect(normalized)
+    logger.info(f"SMART data collected for device: {normalized}")
     return jsonify(smart_data)
 
 
 @app.get('/nvme/<path:device>/get-feature')
 def nvme_get_feature(device: str):
-    normalized = _normalize_smart_device_path(device)
+    try:
+        normalized = _validate_nvme_device_path(device)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     fid = request.args.get('fid', '0x06')
     result = run_command(f'nvme get-feature {normalized} -f {fid} -o json', timeout=15)
     try:
@@ -375,12 +401,26 @@ def nvme_get_feature(device: str):
 
 @app.get('/nvme/<path:device>/fw-log')
 def nvme_fw_log(device: str):
-    normalized = _normalize_smart_device_path(device)
+    try:
+        normalized = _validate_nvme_device_path(device)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     result = run_command(f'nvme fw-log {normalized} -o json', timeout=15)
     try:
         return jsonify(json.loads(result['stdout']))
     except (json.JSONDecodeError, KeyError):
         return jsonify({'error': result.get('stderr', 'command failed')}), 502
+
+
+@app.post('/nvme/<path:device>/error-log-verify')
+def nvme_error_log_verify(device: str):
+    try:
+        normalized = _validate_nvme_device_path(device)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    logger.info(f'NVMe error-log-verify endpoint called for device: {normalized}')
+    data = nvme_collector.error_log_verify(normalized)
+    return jsonify(data)
 
 
 if __name__ == '__main__':

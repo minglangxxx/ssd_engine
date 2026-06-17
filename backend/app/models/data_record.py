@@ -1,8 +1,7 @@
-from datetime import datetime
 from enum import Enum
 
 from app.extensions import db
-from app.utils.time import to_beijing_iso
+from app.utils.time import beijing_now, to_beijing_iso
 
 
 class DataStatus(str, Enum):
@@ -34,11 +33,11 @@ class DataRecord(db.Model):
     compressed_path = db.Column(db.String(500), nullable=True)
     size_bytes = db.Column(db.BigInteger, nullable=False, default=0)
     version = db.Column(db.Integer, nullable=False, default=1)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=beijing_now)
     archived_at = db.Column(db.DateTime, nullable=True)
     compressed_at = db.Column(db.DateTime, nullable=True)
     expires_at = db.Column(db.DateTime, nullable=True)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
 
     def to_dict(self) -> dict:
         return {

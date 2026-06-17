@@ -1,0 +1,49 @@
+test_type: smart
+rules:
+  - field: critical_warning
+    check: not_zero
+    label: 关键告警 (Critical Warning)
+    level: fail
+
+  - field: temperature
+    check: lte
+    label: 温度
+    params:
+      threshold: 70
+    level: warn
+
+  - field: temperature
+    check: lte
+    label: 温度（Critical）
+    params:
+      threshold: 80
+    level: fail
+
+  - field: media_errors
+    check: not_zero
+    label: 媒体错误计数
+    level: fail
+
+  - field: num_err_log_entries
+    check: not_zero
+    label: 错误日志条数
+    level: warn
+
+  - field: percentage_used
+    check: lte
+    label: 寿命使用百分比
+    params:
+      threshold: 80
+    level: warn
+
+  - field: percentage_used
+    check: lte
+    label: 寿命使用百分比（Critical）
+    params:
+      threshold: 95
+    level: fail
+
+  - field: unsafe_shutdowns
+    check: not_zero
+    label: 非安全关机次数
+    level: warn

@@ -38,3 +38,30 @@ export interface NvmeFwLogResponse {
     frs: string[];
   };
 }
+
+export interface NvmeTestRecord {
+  id: number;
+  device_id: number;
+  disk_name: string;
+  test_type: 'identify' | 'namespace' | 'smart' | 'error_log' | 'feature' | 'fw_slot';
+  status: 'pending' | 'running' | 'done' | 'failed';
+  result: NvmeCheckItem[] | null;
+  verdict: 'PASS' | 'PARTIAL' | 'FAIL' | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NvmeCheckItem {
+  field: string;
+  value: unknown;
+  check: string;
+  pass: boolean;
+  reason: string;
+  level: 'fail' | 'warn';
+}
+
+export interface NvmeTestListResponse {
+  items: NvmeTestRecord[];
+  total: number;
+}

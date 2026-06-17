@@ -257,6 +257,8 @@ class IngestService:
                 data_units_read=normalized_sample['data_units_read'],
                 data_units_written=normalized_sample['data_units_written'],
                 available_spare=normalized_sample['available_spare'],
+                num_err_log_entries=normalized_sample['num_err_log_entries'],
+                unsafe_shutdowns=normalized_sample['unsafe_shutdowns'],
                 source=str(sample.get('source') or 'agent_smart'),
             ))
             inserted_count += 1
@@ -298,7 +300,13 @@ class IngestService:
             available_spare_raw = sample.get('available_spare')
             available_spare = None
             if available_spare_raw is not None and available_spare_raw != '':
-                available_spare = IngestService._coerce_bounded_int('available_spare', available_spare_raw, minimum=0, maximum=100)
+                stripped = str(available_spare_raw).replace('%', '').strip()
+                try:
+                    available_spare = int(stripped)
+                except (ValueError, TypeError):
+                    available_spare = None
+            if available_spare is not None:
+                available_spare = max(0, min(100, available_spare))
 
             return {
                 'temperature': IngestService._coerce_bounded_int('temperature', sample.get('temperature', 0), minimum=0, maximum=200),
@@ -310,6 +318,8 @@ class IngestService:
                 'data_units_read': IngestService._coerce_bounded_int('data_units_read', sample.get('data_units_read', 0), minimum=0, maximum=_MYSQL_BIGINT_MAX),
                 'data_units_written': IngestService._coerce_bounded_int('data_units_written', sample.get('data_units_written', 0), minimum=0, maximum=_MYSQL_BIGINT_MAX),
                 'available_spare': available_spare,
+                'num_err_log_entries': IngestService._coerce_bounded_int('num_err_log_entries', sample.get('num_err_log_entries', 0), minimum=0, maximum=_MYSQL_BIGINT_MAX),
+                'unsafe_shutdowns': IngestService._coerce_bounded_int('unsafe_shutdowns', sample.get('unsafe_shutdowns', 0), minimum=0, maximum=_MYSQL_BIGINT_MAX),
             }
         except (TypeError, ValueError):
             return None

@@ -1,7 +1,6 @@
-from datetime import datetime
 
 from app.extensions import db
-from app.utils.time import to_beijing_iso
+from app.utils.time import beijing_now, to_beijing_iso
 
 
 class TaskStatus:
@@ -32,8 +31,8 @@ class Task(db.Model):
     data_window_end = db.Column(db.DateTime, nullable=True)
     retention_policy = db.Column(db.JSON, nullable=True)
     last_analysis_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=beijing_now)
+    updated_at = db.Column(db.DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
 
     device = db.relationship('Device', backref='tasks')
 

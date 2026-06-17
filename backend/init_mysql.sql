@@ -8,9 +8,31 @@ FLUSH PRIVILEGES;
 
 USE ssd_engine;
 
+SET time_zone = '+08:00';
+
 DROP PROCEDURE IF EXISTS add_column_if_missing;
 DROP PROCEDURE IF EXISTS add_index_if_missing;
 DROP PROCEDURE IF EXISTS add_fk_if_missing;
+
+-- V2.5: nvme_tests 表
+CREATE TABLE IF NOT EXISTS `nvme_tests` (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    device_id INT NOT NULL,
+    disk_name VARCHAR(64) NOT NULL,
+    test_type VARCHAR(32) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    result JSON NULL,
+    verdict VARCHAR(16) NULL DEFAULT NULL,
+    error TEXT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_nvme_test_device (device_id, disk_name),
+    INDEX idx_nvme_test_type (test_type),
+    CONSTRAINT fk_nvme_tests_device FOREIGN KEY (device_id) REFERENCES devices(id)
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- V2.5: nvme_smart_data 新增字段（过程定义后调用）
+-- CALL add_column_if_missing 已移至 DELIMITER ; 之后
 
 DELIMITER $$
 
@@ -91,6 +113,10 @@ BEGIN
 END $$
 
 DELIMITER ;
+
+-- V2.5: nvme_smart_data 新增字段
+CALL add_column_if_missing('nvme_smart_data', 'num_err_log_entries', 'BIGINT NOT NULL DEFAULT 0');
+CALL add_column_if_missing('nvme_smart_data', 'unsafe_shutdowns', 'BIGINT NOT NULL DEFAULT 0');
 
 CALL add_column_if_missing('tasks', 'started_at', 'DATETIME NULL');
 CALL add_column_if_missing('tasks', 'finished_at', 'DATETIME NULL');

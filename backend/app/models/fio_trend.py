@@ -1,7 +1,6 @@
-from datetime import datetime
 
 from app.extensions import db
-from app.utils.time import to_beijing_iso
+from app.utils.time import beijing_now, to_beijing_iso
 
 
 class FioTrendData(db.Model):
@@ -15,7 +14,7 @@ class FioTrendData(db.Model):
     task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=False, index=True)
     device_ip = db.Column(db.String(50), nullable=False, default='', index=True)
     device_path = db.Column(db.String(255), nullable=False, default='')
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    timestamp = db.Column(db.DateTime, nullable=False, default=beijing_now, index=True)
     sample_interval_ms = db.Column(db.Integer, nullable=False, default=1000)
     iops_read = db.Column(db.Float, nullable=False, default=0)
     iops_write = db.Column(db.Float, nullable=False, default=0)
@@ -27,7 +26,7 @@ class FioTrendData(db.Model):
     lat_p99 = db.Column(db.Float, nullable=False, default=0)
     lat_max = db.Column(db.Float, nullable=False, default=0)
     source = db.Column(db.String(32), nullable=False, default='agent_fio')
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=beijing_now)
 
     def to_dict(self) -> dict:
         return {

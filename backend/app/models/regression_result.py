@@ -1,7 +1,5 @@
-from datetime import datetime
-
 from app.extensions import db
-from app.utils.time import to_beijing_iso
+from app.utils.time import beijing_now, to_beijing_iso
 
 
 class RegressionResult(db.Model):
@@ -16,7 +14,7 @@ class RegressionResult(db.Model):
     lat_p99_diff = db.Column(db.Float, nullable=True)
     verdict = db.Column(db.String(10), nullable=False)
     detail = db.Column(db.JSON, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=beijing_now)
 
     task = db.relationship('Task', backref='regressions')
     baseline = db.relationship('Baseline', backref='regressions')

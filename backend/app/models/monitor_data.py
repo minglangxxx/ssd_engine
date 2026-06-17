@@ -1,7 +1,6 @@
-from datetime import datetime
 
 from app.extensions import db
-from app.utils.time import to_beijing_iso
+from app.utils.time import beijing_now, to_beijing_iso
 
 
 class HostMonitorData(db.Model):
@@ -11,7 +10,7 @@ class HostMonitorData(db.Model):
     device_ip = db.Column(db.String(50), nullable=False, index=True)
     data_type = db.Column(db.String(20), nullable=False)
     data = db.Column(db.JSON, nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=beijing_now, index=True)
 
     def to_dict(self) -> dict:
         return {
@@ -30,7 +29,7 @@ class DiskMonitorData(db.Model):
     device_ip = db.Column(db.String(50), nullable=False, index=True)
     disk_name = db.Column(db.String(64), nullable=False, index=True)
     data = db.Column(db.JSON, nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=beijing_now, index=True)
 
     def to_dict(self) -> dict:
         return {
@@ -69,7 +68,7 @@ class DiskMonitorSample(db.Model):
     disk_rrqm_per_sec = db.Column(db.Float, nullable=False, default=0)
     disk_wrqm_per_sec = db.Column(db.Float, nullable=False, default=0)
     source = db.Column(db.String(32), nullable=False, default='agent_disk')
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=beijing_now, index=True)
 
     def to_dict(self) -> dict:
         return {

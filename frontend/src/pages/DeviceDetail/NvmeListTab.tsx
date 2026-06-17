@@ -1,13 +1,24 @@
 import React, { useState } from 'react';
-import { Table, Button, Empty, Space, Tag } from 'antd';
+import { Table, Button, Empty, Space, Tag, Dropdown } from 'antd';
+import { DownOutlined } from '@ant-design/icons';
 import { useNvmeList, type NvmeDetailType } from '@/hooks/useNvme';
 import NvmeDetailModal from './NvmeDetailModal';
 import FeatureSelectModal from './FeatureSelectModal';
+import NvmeValidationResult from './NvmeValidationResult';
 import type { NvmeDeviceInfo } from '@/types/nvme';
 
 interface NvmeListTabProps {
   deviceId: number;
 }
+
+const validationTestTypes = [
+  { key: 'identify', label: 'Identify 校验' },
+  { key: 'namespace', label: 'Namespace 校验' },
+  { key: 'smart', label: 'SMART 校验' },
+  { key: 'error_log', label: 'Error Log 校验' },
+  { key: 'feature', label: 'Feature 校验' },
+  { key: 'fw_slot', label: 'FW Slot 校验' },
+];
 
 const NvmeListTab: React.FC<NvmeListTabProps> = ({ deviceId }) => {
   const { data, isLoading } = useNvmeList(deviceId);
@@ -20,6 +31,11 @@ const NvmeListTab: React.FC<NvmeListTabProps> = ({ deviceId }) => {
 
   const [featureSelectOpen, setFeatureSelectOpen] = useState(false);
   const [featureSelectDisk, setFeatureSelectDisk] = useState('');
+
+  const [validationOpen, setValidationOpen] = useState(false);
+  const [validationDisk, setValidationDisk] = useState('');
+  const [validationDisk, setValidationDisk] = useState('');
+  const [validationTestType, setValidationTestType] = useState<'identify' | 'namespace' | 'smart' | 'error_log' | 'feature' | 'fw_slot'>('identify');
 
   const openModal = (diskName: string, type: typeof modalType) => {
     setSelectedDisk(diskName);
@@ -36,6 +52,12 @@ const NvmeListTab: React.FC<NvmeListTabProps> = ({ deviceId }) => {
     setModalType('get-feature');
     setFeatureFid(fid);
     setModalOpen(true);
+  };
+
+  const openValidation = (diskName: string, testType: typeof validationTestType) => {
+    setValidationDisk(diskName);
+    setValidationTestType(testType);
+    setValidationOpen(true);
   };
 
   const columns = [
@@ -79,7 +101,7 @@ const NvmeListTab: React.FC<NvmeListTabProps> = ({ deviceId }) => {
     {
       title: '操作',
       key: 'actions',
-      width: 400,
+      width: 460,
       render: (_: unknown, record: NvmeDeviceInfo) => (
         <Space size="small">
           <Button size="small" onClick={() => openModal(record.disk_name, 'id-ctrl')}>
@@ -103,6 +125,16 @@ const NvmeListTab: React.FC<NvmeListTabProps> = ({ deviceId }) => {
           <Button size="small" onClick={() => openModal(record.disk_name, 'fw-log')}>
             FW-LOG
           </Button>
+          <Dropdown
+            menu={{
+              items: validationTestTypes.map(t => ({ key: t.key, label: t.label })),
+              onClick: ({ key }) => openValidation(record.disk_name, key as typeof validationTestType),
+            }}
+          >
+            <Button size="small" type="primary" disabled={validationOpen && validationDisk === record.disk_name}>
+              校验 <DownOutlined />
+            </Button>
+          </Dropdown>
         </Space>
       ),
     },
@@ -131,6 +163,16 @@ const NvmeListTab: React.FC<NvmeListTabProps> = ({ deviceId }) => {
         diskName={featureSelectDisk}
         onConfirm={handleFeatureSelect}
         onCancel={() => setFeatureSelectOpen(false)}
+      />
+      <NvmeValidationResult
+        open={validationOpen}
+        deviceId={deviceId}
+        diskName={validationDisk}
+        testType={validationTestType}
+        onClose={() => {
+          setValidationOpen(false);
+          setValidationDisk('');
+        }}
       />
     </>
   );

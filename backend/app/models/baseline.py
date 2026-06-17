@@ -1,7 +1,5 @@
-from datetime import datetime
-
 from app.extensions import db
-from app.utils.time import to_beijing_iso
+from app.utils.time import beijing_now, to_beijing_iso
 
 
 class Baseline(db.Model):
@@ -16,7 +14,7 @@ class Baseline(db.Model):
     source_task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=False, index=True)
     device_ip = db.Column(db.String(50), nullable=False, index=True)
     device_path = db.Column(db.String(255), nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=beijing_now)
     created_by = db.Column(db.String(64), nullable=False, default='system')
 
     source_task = db.relationship('Task', backref='baselines')
