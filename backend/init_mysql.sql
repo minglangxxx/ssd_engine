@@ -139,7 +139,7 @@ CALL add_column_if_missing('data_records', 'storage_format', 'VARCHAR(32) NOT NU
 CALL add_column_if_missing('data_records', 'manifest_path', 'VARCHAR(500) NULL');
 CALL add_column_if_missing('data_records', 'hot_table_name', 'VARCHAR(128) NULL');
 CALL add_column_if_missing('data_records', 'checksum', 'VARCHAR(128) NULL');
-CALL add_column_if_missing('data_records', 'metadata', 'JSON NULL');
+CALL add_column_if_missing('data_records', 'extra_metadata', 'JSON NULL');
 CALL add_column_if_missing('data_records', 'query_scope', 'VARCHAR(64) NULL');
 CALL add_column_if_missing('data_records', 'version', 'INT NOT NULL DEFAULT 1');
 CALL add_column_if_missing('data_records', 'updated_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
@@ -184,6 +184,125 @@ CALL add_column_if_missing('devices', 'os_version', 'VARCHAR(128) NULL');
 CALL add_column_if_missing('devices', 'kernel_version', 'VARCHAR(128) NULL');
 CALL add_column_if_missing('devices', 'cpu_usage', 'FLOAT NULL');
 CALL add_column_if_missing('devices', 'memory_usage', 'FLOAT NULL');
+
+-- V2: baselines 表
+CREATE TABLE IF NOT EXISTS `baselines` (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(128) NOT NULL,
+    device_model VARCHAR(128) NULL,
+    firmware VARCHAR(64) NULL,
+    fio_config JSON NOT NULL,
+    result JSON NOT NULL,
+    source_task_id INT NOT NULL,
+    device_ip VARCHAR(50) NOT NULL,
+    device_path VARCHAR(255) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(64) NOT NULL DEFAULT 'system',
+    INDEX idx_baselines_device_ip (device_ip),
+    INDEX idx_baselines_source_task_id (source_task_id),
+    CONSTRAINT fk_baselines_source_task FOREIGN KEY (source_task_id) REFERENCES tasks(id)
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- V2: regression_results 表
+CREATE TABLE IF NOT EXISTS `regression_results` (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    task_id INT NOT NULL,
+    baseline_id INT NOT NULL,
+    iops_diff FLOAT NULL,
+    bw_diff FLOAT NULL,
+    lat_mean_diff FLOAT NULL,
+    lat_p99_diff FLOAT NULL,
+    verdict VARCHAR(10) NOT NULL,
+    detail JSON NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_regression_task_id (task_id),
+    INDEX idx_regression_baseline_id (baseline_id),
+    INDEX idx_regression_verdict (verdict),
+    CONSTRAINT fk_regression_task FOREIGN KEY (task_id) REFERENCES tasks(id),
+    CONSTRAINT fk_regression_baseline FOREIGN KEY (baseline_id) REFERENCES baselines(id)
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- V2: group_tasks 表
+CREATE TABLE IF NOT EXISTS `group_tasks` (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(128) NOT NULL,
+    fio_config JSON NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    summary JSON NULL,
+    total_count INT NOT NULL DEFAULT 0,
+    done_count INT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_group_tasks_status (status)
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- V2: snia_tasks 表
+CREATE TABLE IF NOT EXISTS `snia_tasks` (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(128) NOT NULL,
+    device_id INT NOT NULL,
+    device_ip VARCHAR(50) NOT NULL,
+    device_path VARCHAR(255) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    current_phase VARCHAR(20) NULL,
+    current_round INT NOT NULL DEFAULT 0,
+    total_rounds INT NOT NULL DEFAULT 25,
+    iops_history TEXT NULL,
+    is_steady BOOLEAN NOT NULL DEFAULT FALSE,
+    config JSON NOT NULL,
+    result JSON NULL,
+    error TEXT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_snia_tasks_device_id (device_id),
+    INDEX idx_snia_tasks_status (status),
+    CONSTRAINT fk_snia_tasks_device FOREIGN KEY (device_id) REFERENCES devices(id)
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- V2: fw_upgrade_tests 表
+CREATE TABLE IF NOT EXISTS `fw_upgrade_tests` (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(128) NOT NULL,
+    device_id INT NOT NULL,
+    device_ip VARCHAR(50) NOT NULL,
+    device_path VARCHAR(255) NOT NULL,
+    fw_before VARCHAR(64) NULL,
+    fw_after VARCHAR(64) NULL,
+    fio_config JSON NOT NULL,
+    result_before JSON NULL,
+    task_before_id INT NULL,
+    result_after JSON NULL,
+    task_after_id INT NULL,
+    regression_id INT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    error TEXT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_fw_tests_device_id (device_id),
+    INDEX idx_fw_tests_status (status),
+    INDEX idx_fw_tests_device_ip (device_ip),
+    CONSTRAINT fk_fw_tests_device FOREIGN KEY (device_id) REFERENCES devices(id),
+    CONSTRAINT fk_fw_tests_regression FOREIGN KEY (regression_id) REFERENCES regression_results(id)
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- V2: tasks 表扩展 group_task 字段
+CALL add_column_if_missing('tasks', 'group_task_id', 'INT NULL');
+CALL add_column_if_missing('tasks', 'is_sub_task', 'BOOLEAN DEFAULT FALSE');
+CALL add_index_if_missing('tasks', 'idx_tasks_group_task_id', '(group_task_id)');
+
+-- m10: 补全 tasks.group_task_id 的 FK 约束
+CALL add_fk_if_missing('tasks', 'fk_tasks_group_task_id',
+  'FOREIGN KEY (group_task_id) REFERENCES group_tasks(id) ON DELETE SET NULL');
+
+-- M15: data_records 列名 metadata → extra_metadata（MySQL 保留字修正）
+SET @col_meta = (SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'data_records' AND column_name = 'metadata');
+SET @sql_meta = IF(@col_meta > 0,
+    'ALTER TABLE data_records CHANGE COLUMN `metadata` `extra_metadata` JSON NULL',
+    'SELECT 1');
+PREPARE stmt FROM @sql_meta;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 DROP PROCEDURE IF EXISTS add_column_if_missing;
 DROP PROCEDURE IF EXISTS add_index_if_missing;

@@ -24,6 +24,8 @@ class Task(db.Model):
     result = db.Column(db.JSON, nullable=True)
     raw_output = db.Column(db.Text, nullable=True)
     fault_type = db.Column(db.String(20), nullable=False, default='none')
+    group_task_id = db.Column(db.Integer, db.ForeignKey('group_tasks.id'), nullable=True, index=True)
+    is_sub_task = db.Column(db.Boolean, nullable=False, default=False)
     started_at = db.Column(db.DateTime, nullable=True, index=True)
     finished_at = db.Column(db.DateTime, nullable=True, index=True)
     data_window_start = db.Column(db.DateTime, nullable=True)
@@ -45,6 +47,8 @@ class Task(db.Model):
             'device_path': self.device_path,
             'config': self.config,
             'fault_type': self.fault_type,
+            'group_task_id': self.group_task_id,
+            'is_sub_task': self.is_sub_task,
             'result': self.result,
             'started_at': to_beijing_iso(self.started_at, assume_utc=True),
             'finished_at': to_beijing_iso(self.finished_at, assume_utc=True),

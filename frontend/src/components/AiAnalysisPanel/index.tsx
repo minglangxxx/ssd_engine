@@ -91,6 +91,8 @@ function getSectionAccent(title: string) {
   };
 }
 
+const AI_POLL_MAX_WAIT_MS = 5 * 60 * 1000;
+
 const AiAnalysisSection: React.FC<AiAnalysisSectionProps> = ({ taskId, status }) => {
   const [scope, setScope] = useState({
     include_fio: true,
@@ -99,14 +101,17 @@ const AiAnalysisSection: React.FC<AiAnalysisSectionProps> = ({ taskId, status })
     window_before_seconds: 30,
     window_after_seconds: 30,
   });
+  const [pollingTimedOut, setPollingTimedOut] = useState(false);
 
   const { data: analysisResult, refetch } = useAiAnalysis(taskId);
   const { mutate: triggerAnalysis, isPending: analyzing } = useTriggerAnalysis();
 
   usePolling({
     fn: () => refetch(),
-    enabled: analysisResult?.status === 'analyzing',
+    enabled: !pollingTimedOut && analysisResult?.status === 'analyzing',
     interval: 3000,
+    maxWaitMs: AI_POLL_MAX_WAIT_MS,
+    onTimeout: () => setPollingTimedOut(true),
   });
 
   const handleAnalyze = () => {
@@ -115,6 +120,7 @@ const AiAnalysisSection: React.FC<AiAnalysisSectionProps> = ({ taskId, status })
       {
         onSuccess: () => {
           message.success('分析已提交');
+          setPollingTimedOut(false);
           refetch();
         },
       }
@@ -211,6 +217,27 @@ const AiAnalysisSection: React.FC<AiAnalysisSectionProps> = ({ taskId, status })
           description="分析任务已经提交，页面会自动轮询最新结果。你可以先查看趋势图和基础指标。"
           action={<Spin size="small" />}
           style={{ marginTop: 16 }}
+        />
+      )}
+
+      {pollingTimedOut && analysisResult?.status === 'analyzing' && (
+        <Alert
+          type="warning"
+          showIcon
+          message="AI 分析响应超时"
+          description="已超过最大等待时长，请稍后重试或检查 AI 服务状态。"
+          style={{ marginTop: 8 }}
+          action={
+            <Button
+              size="small"
+              onClick={() => {
+                setPollingTimedOut(false);
+                refetch();
+              }}
+            >
+              重试
+            </Button>
+          }
         />
       )}
 

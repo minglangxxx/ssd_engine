@@ -39,6 +39,7 @@ class Config:
     AI_API_KEY = os.getenv('AI_API_KEY', '')
     AI_BASE_URL = os.getenv('AI_BASE_URL', 'https://api.openai.com/v1')
     AI_MODEL = os.getenv('AI_MODEL', 'gpt-4.1')
+    AI_TIMEOUT = int(os.getenv('AI_TIMEOUT', '120'))
     AI_ANALYSIS_MAX_AGE_DAYS = int(os.getenv('AI_ANALYSIS_MAX_AGE_DAYS', '7'))
 
     # 监控数据保留天数（超过后自动归档+清理）

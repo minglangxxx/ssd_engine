@@ -6,3 +6,8 @@ export { dataApi } from './data';
 export { smartApi } from './smart';
 export { nvmeApi } from './nvme';
 export { dashboardApi } from './dashboard';
+export { baselineApi } from './baseline';
+export { regressionApi } from './regression';
+export { groupTaskApi } from './group-task';
+export { sniaApi } from './snia';
+export { fwTestApi } from './fw-test';

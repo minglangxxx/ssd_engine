@@ -28,7 +28,7 @@ class DataRecord(db.Model):
     manifest_path = db.Column(db.String(500), nullable=True)
     hot_table_name = db.Column(db.String(128), nullable=True)
     checksum = db.Column(db.String(128), nullable=True)
-    extra_metadata = db.Column('metadata', db.JSON, nullable=True)
+    extra_metadata = db.Column('extra_metadata', db.JSON, nullable=True)
     query_scope = db.Column(db.String(64), nullable=True, index=True)
     file_path = db.Column(db.String(500), nullable=True)
     compressed_path = db.Column(db.String(500), nullable=True)

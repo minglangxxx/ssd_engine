@@ -30,7 +30,7 @@ const DeviceManage: React.FC = () => {
     queryKey: ['devices'],
     queryFn: () => deviceApi.list(),
     refetchOnMount: 'always',
-    refetchInterval: 30000,
+    refetchInterval: 10000,
   });
 
   const addMutation = useMutation({

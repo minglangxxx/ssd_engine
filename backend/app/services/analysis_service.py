@@ -9,6 +9,7 @@ from pathlib import Path
 
 from flask import current_app
 from openai import OpenAI
+import openai
 
 from app.config import Config
 from app.extensions import db
@@ -18,6 +19,9 @@ from app.services.monitor_service import MonitorService
 from app.services.task_service import TaskService
 from app.utils.db import db_released
 from app.utils.helpers import ApiError
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 MAX_CONTEXT_POINTS = 120
@@ -35,7 +39,12 @@ class AnalysisService:
     def __init__(self):
         if not Config.AI_API_KEY:
             raise ApiError('VALIDATION_ERROR', '未配置 AI_API_KEY', 400)
-        self.client = OpenAI(api_key=Config.AI_API_KEY, base_url=Config.AI_BASE_URL)
+        self._timeout = max(10, Config.AI_TIMEOUT)
+        self.client = OpenAI(
+            api_key=Config.AI_API_KEY,
+            base_url=Config.AI_BASE_URL,
+            timeout=self._timeout,
+        )
         self.model = Config.AI_MODEL
 
     def analyze(
@@ -149,21 +158,32 @@ class AnalysisService:
         include_disk_monitor: bool,
     ) -> None:
         with app.app_context():
-            service = cls()
-            analysis = AiAnalysis.query.get(analysis_id)
-            task = Task.query.get(task_id)
-            if analysis is None or task is None:
-                return
+            try:
+                service = cls()
+                analysis = AiAnalysis.query.get(analysis_id)
+                task = Task.query.get(task_id)
+                if analysis is None or task is None:
+                    return
 
-            service._execute_analysis(
-                task,
-                analysis,
-                execution_window,
-                include_fio,
-                include_host_monitor,
-                include_disk_monitor,
-            )
-            db.session.remove()
+                service._execute_analysis(
+                    task,
+                    analysis,
+                    execution_window,
+                    include_fio,
+                    include_host_monitor,
+                    include_disk_monitor,
+                )
+            except Exception:
+                try:
+                    analysis = AiAnalysis.query.get(analysis_id)
+                    if analysis and analysis.status == 'analyzing':
+                        analysis.status = 'failed'
+                        analysis.error = '分析过程发生未预期异常'
+                        db.session.commit()
+                except Exception:
+                    logger.exception('Failed to mark analysis %d as failed', analysis_id)
+            finally:
+                db.session.remove()
 
     def _execute_analysis(
         self,
@@ -194,6 +214,7 @@ class AnalysisService:
                     ],
                     temperature=0.3,
                     max_tokens=4096,
+                    timeout=self._timeout,
                 )
             try:
                 analysis = AiAnalysis.query.get(analysis_id)
@@ -210,6 +231,14 @@ class AnalysisService:
             except Exception:
                 db.session.rollback()
                 raise
+            return analysis
+        except openai.APITimeoutError as error:
+            db.session.rollback()
+            analysis = AiAnalysis.query.get(analysis_id)
+            if analysis:
+                analysis.status = 'failed'
+                analysis.error = f'AI 分析超时（{self._timeout}s）'
+                db.session.commit()
             return analysis
         except Exception as error:
             db.session.rollback()
